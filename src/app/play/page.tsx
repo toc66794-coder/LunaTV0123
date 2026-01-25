@@ -147,6 +147,9 @@ function PlayPageClient() {
     videoYear,
   ]);
 
+  // 保存長按前的播放速度
+  const speedBeforeLongPress = useRef<number>(1.0);
+
   // Custom Long Press Hook
   const {
     onTouchStart,
@@ -159,13 +162,16 @@ function PlayPageClient() {
   } = useLongPress({
     onLongPressStart: () => {
       if (artPlayerRef.current) {
+        // 保存當前播放速度
+        speedBeforeLongPress.current = artPlayerRef.current.playbackRate;
         artPlayerRef.current.playbackRate = 3;
         artPlayerRef.current.notice.show = '3x 速播放中';
       }
     },
     onLongPressEnd: () => {
       if (artPlayerRef.current) {
-        artPlayerRef.current.playbackRate = lastPlaybackRateRef.current || 1;
+        // 恢復到長按前的播放速度
+        artPlayerRef.current.playbackRate = speedBeforeLongPress.current;
         artPlayerRef.current.notice.show = '';
       }
     },
