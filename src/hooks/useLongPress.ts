@@ -91,14 +91,13 @@ export const useLongPress = ({
   const handleEnd = useCallback(() => {
     clearTimer();
 
-    if (isActive.current) {
-      if (hasTriggered.current) {
-        // Long press ended normally
-        if (onLongPressEnd) onLongPressEnd();
-      } else {
-        // Click triggered
-        if (onClick) onClick();
-      }
+    // 如果長按已經觸發過,無論 isActive 狀態如何都要調用 onLongPressEnd
+    if (hasTriggered.current) {
+      // Long press ended - always call onLongPressEnd to restore playback rate
+      if (onLongPressEnd) onLongPressEnd();
+    } else if (isActive.current) {
+      // Click triggered (only if was active and never triggered long press)
+      if (onClick) onClick();
     }
 
     // Reset interaction state
