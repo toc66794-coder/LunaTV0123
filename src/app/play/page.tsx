@@ -28,6 +28,7 @@ import { useVideoGestures } from '@/hooks/useVideoGestures';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import SettingsPanel from '@/components/SettingsPanel';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -97,6 +98,9 @@ function PlayPageClient() {
   useEffect(() => {
     blockAdEnabledRef.current = blockAdEnabled;
   }, [blockAdEnabled]);
+
+  // 設定面板開關
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
 
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
@@ -293,6 +297,11 @@ function PlayPageClient() {
       );
       brightnessRef.current = newBrightness;
       setBrightness(newBrightness);
+
+      // 同時更新 video 元素的亮度,確保全螢幕下也能生效
+      if (artPlayerRef.current?.video) {
+        artPlayerRef.current.video.style.filter = `brightness(${newBrightness}%)`;
+      }
 
       showGestureIndicator('brightness', Math.round(newBrightness));
     },
@@ -558,6 +567,34 @@ function PlayPageClient() {
     // 如果曾经有禁用属性，移除之
     if (video.hasAttribute('disableRemotePlayback')) {
       video.removeAttribute('disableRemotePlayback');
+    }
+  };
+
+  // 處理播放速度變更
+  const handleSpeedChange = (speed: number) => {
+    if (artPlayerRef.current) {
+      artPlayerRef.current.playbackRate = speed;
+      lastPlaybackRateRef.current = speed;
+    }
+  };
+
+  // 處理去廣告切換
+  const handleBlockAdToggle = () => {
+    const newVal = !blockAdEnabled;
+    try {
+      localStorage.setItem('enable_blockad', String(newVal));
+      if (artPlayerRef.current) {
+        resumeTimeRef.current = artPlayerRef.current.currentTime;
+        if (artPlayerRef.current.video && artPlayerRef.current.video.hls) {
+          artPlayerRef.current.video.hls.destroy();
+        }
+        artPlayerRef.current.destroy();
+        artPlayerRef.current = null;
+      }
+      setBlockAdEnabled(newVal);
+      setIsSettingsPanelOpen(false); // 關閉設定面板
+    } catch (_) {
+      // ignore
     }
   };
 
@@ -1439,97 +1476,11 @@ function PlayPageClient() {
         },
         settings: [
           {
-            html: '去广告',
-            icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
-            tooltip: blockAdEnabled ? '已开启' : '已关闭',
-            onClick() {
-              const newVal = !blockAdEnabled;
-              try {
-                localStorage.setItem('enable_blockad', String(newVal));
-                if (artPlayerRef.current) {
-                  resumeTimeRef.current = artPlayerRef.current.currentTime;
-                  if (
-                    artPlayerRef.current.video &&
-                    artPlayerRef.current.video.hls
-                  ) {
-                    artPlayerRef.current.video.hls.destroy();
-                  }
-                  artPlayerRef.current.destroy();
-                  artPlayerRef.current = null;
-                }
-                setBlockAdEnabled(newVal);
-              } catch (_) {
-                // ignore
-              }
-              return newVal ? '当前开启' : '当前关闭';
-            },
-          },
-          {
-            name: '跳过片头片尾',
-            html: '跳过片头片尾',
-            switch: skipConfigRef.current.enable,
-            onSwitch: function (item) {
-              const newConfig = {
-                ...skipConfigRef.current,
-                enable: !item.switch,
-              };
-              handleSkipConfigChange(newConfig);
-              return !item.switch;
-            },
-          },
-          {
-            html: '删除跳过配置',
-            onClick: function () {
-              handleSkipConfigChange({
-                enable: false,
-                intro_time: 0,
-                outro_time: 0,
-              });
-              return '';
-            },
-          },
-          {
-            name: '设置片头',
-            html: '设置片头',
-            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="12" r="2" fill="#ffffff"/><path d="M9 12L17 12" stroke="#ffffff" stroke-width="2"/><path d="M17 6L17 18" stroke="#ffffff" stroke-width="2"/></svg>',
-            tooltip:
-              skipConfigRef.current.intro_time === 0
-                ? '设置片头时间'
-                : `${formatTime(skipConfigRef.current.intro_time)}`,
-            onClick: function () {
-              const currentTime = artPlayerRef.current?.currentTime || 0;
-              if (currentTime > 0) {
-                const newConfig = {
-                  ...skipConfigRef.current,
-                  intro_time: currentTime,
-                };
-                handleSkipConfigChange(newConfig);
-                return `${formatTime(currentTime)}`;
-              }
-            },
-          },
-          {
-            name: '设置片尾',
-            html: '设置片尾',
-            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 6L7 18" stroke="#ffffff" stroke-width="2"/><path d="M7 12L15 12" stroke="#ffffff" stroke-width="2"/><circle cx="19" cy="12" r="2" fill="#ffffff"/></svg>',
-            tooltip:
-              skipConfigRef.current.outro_time >= 0
-                ? '设置片尾时间'
-                : `-${formatTime(-skipConfigRef.current.outro_time)}`,
-            onClick: function () {
-              const outroTime =
-                -(
-                  artPlayerRef.current?.duration -
-                  artPlayerRef.current?.currentTime
-                ) || 0;
-              if (outroTime < 0) {
-                const newConfig = {
-                  ...skipConfigRef.current,
-                  outro_time: outroTime,
-                };
-                handleSkipConfigChange(newConfig);
-                return `-${formatTime(-outroTime)}`;
-              }
+            html: '設定',
+            icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+            tooltip: '播放器設定',
+            click: function () {
+              setIsSettingsPanelOpen(true);
             },
           },
         ],
@@ -2241,6 +2192,19 @@ function PlayPageClient() {
           </div>
         </div>
       </div>
+
+      {/* 自定義設定面板 */}
+      <SettingsPanel
+        isOpen={isSettingsPanelOpen}
+        onClose={() => setIsSettingsPanelOpen(false)}
+        currentSpeed={lastPlaybackRateRef.current}
+        onSpeedChange={handleSpeedChange}
+        blockAdEnabled={blockAdEnabled}
+        onBlockAdToggle={handleBlockAdToggle}
+        skipConfig={skipConfig}
+        onSkipConfigChange={handleSkipConfigChange}
+        artPlayerRef={artPlayerRef}
+      />
     </PageLayout>
   );
 }
