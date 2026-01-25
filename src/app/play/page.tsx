@@ -2206,6 +2206,8 @@ function PlayPageClient() {
         artPlayerRef={artPlayerRef}
         videoUrl={videoUrl}
         videoTitle={videoTitle}
+        episodeNumber={currentEpisodeIndex + 1}
+        totalEpisodes={totalEpisodes}
       />
     </PageLayout>
   );

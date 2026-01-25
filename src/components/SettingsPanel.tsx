@@ -3,8 +3,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import DownloadGuide from './DownloadGuide';
 import { downloadM3U8InBrowser } from '@/lib/m3u8-downloader';
+
+import DownloadGuide from './DownloadGuide';
 
 interface SkipConfig {
   enable: boolean;
@@ -24,6 +25,8 @@ interface SettingsPanelProps {
   artPlayerRef: React.MutableRefObject<any>;
   videoUrl?: string;
   videoTitle?: string;
+  episodeNumber?: number;
+  totalEpisodes?: number;
 }
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -58,11 +61,21 @@ export default function SettingsPanel({
   artPlayerRef,
   videoUrl = '',
   videoTitle = '影片',
+  episodeNumber,
+  totalEpisodes = 1,
 }: SettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [showDownload, setShowDownload] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+
+  // 生成帶集數的檔名
+  const getDownloadFilename = () => {
+    if (totalEpisodes > 1 && episodeNumber !== undefined) {
+      return `${videoTitle} - 第${episodeNumber}集`;
+    }
+    return videoTitle;
+  };
 
   // 點擊外部關閉
   useEffect(() => {
@@ -132,9 +145,11 @@ export default function SettingsPanel({
     setIsDownloading(true);
     setDownloadProgress(0);
 
+    const filename = getDownloadFilename();
+
     const result = await downloadM3U8InBrowser(
       videoUrl,
-      videoTitle,
+      filename,
       (progress) => {
         setDownloadProgress(Math.round(progress));
       }
@@ -414,7 +429,10 @@ export default function SettingsPanel({
                   </div>
 
                   {/* 下載指南 */}
-                  <DownloadGuide m3u8Url={videoUrl} videoTitle={videoTitle} />
+                  <DownloadGuide
+                    m3u8Url={videoUrl}
+                    videoTitle={getDownloadFilename()}
+                  />
                 </div>
               )}
             </div>
