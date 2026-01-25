@@ -2204,6 +2204,8 @@ function PlayPageClient() {
         skipConfig={skipConfig}
         onSkipConfigChange={handleSkipConfigChange}
         artPlayerRef={artPlayerRef}
+        videoUrl={videoUrl}
+        videoTitle={videoTitle}
       />
     </PageLayout>
   );
