@@ -271,31 +271,6 @@ function PlayPageClient() {
     };
   }, []);
 
-  // 全螢幕控制欄顯示狀態 - 與 ArtPlayer 控制欄同步
-  const [showFullscreenControls, setShowFullscreenControls] = useState(false);
-
-  // 使用 ArtPlayer 官方事件 API 監聽控制欄顯示狀態
-  useEffect(() => {
-    if (!artPlayerRef.current) return;
-
-    const handleControlChange = (state: boolean) => {
-      // 只在全螢幕時顯示我們的控制欄
-      if (isFullscreen) {
-        setShowFullscreenControls(state);
-      } else {
-        setShowFullscreenControls(false);
-      }
-    };
-
-    // 監聽 ArtPlayer 控制欄顯示/隱藏事件
-    artPlayerRef.current.on('control', handleControlChange);
-
-    return () => {
-      if (artPlayerRef.current) {
-        artPlayerRef.current.off('control', handleControlChange);
-      }
-    };
-  }, [isFullscreen]);
   // 顯示手勢反饋
   const showGestureIndicator = (
     type: 'volume' | 'brightness' | 'seek-forward' | 'seek-backward',
@@ -1437,7 +1412,7 @@ function PlayPageClient() {
         setting: true,
         loop: false,
         flip: false,
-        playbackRate: true,
+        playbackRate: false, // 禁用原生速度選單，改用自定義快捷按鈕
         aspectRatio: false,
         fullscreen: true,
         fullscreenWeb: true,
@@ -1456,6 +1431,33 @@ function PlayPageClient() {
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
+        // 注入自定義快捷按鈕圖層
+        layers: [
+          {
+            name: 'custom-controls',
+            html: `
+              <div id="artplayer-custom-controls" style="
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                display: flex;
+                gap: 8px;
+                z-index: 100;
+                pointer-events: auto;
+              ">
+                <!-- 這些按鈕會由初始化後的腳本動動態更新狀態 -->
+                <div id="ad-btn-container"></div>
+                <div id="speed-btns-container" style="display: flex; gap: 4px;"></div>
+                <div id="skip-btn-container"></div>
+                <div id="download-btn-container"></div>
+                <div id="settings-btn-container"></div>
+              </div>
+            `,
+            style: {
+              display: 'none', // 預設隱藏，由 ArtPlayer 控制顯示
+            },
+          },
+        ],
         // HLS 支持配置
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
@@ -1547,39 +1549,98 @@ function PlayPageClient() {
           requestWakeLock();
         }
 
-        // 修復播放速度設定 - 修改原生設定的行為
-        try {
-          // 等待一小段時間確保設定已初始化
-          setTimeout(() => {
-            if (!artPlayerRef.current) return;
+        // --- 全域函數綁定 (橋接 React 到原生 DOM) ---
+        (window as any).toggleAdBlock = () => handleBlockAdToggle();
+        (window as any).setPlaySpeed = (s: number) => handleSpeedChange(s);
+        (window as any).toggleSkip = () => {
+          handleSkipConfigChange({
+            ...skipConfigRef.current,
+            enable: !skipConfigRef.current.enable,
+          });
+        };
+        (window as any).openSettings = () => setIsSettingsPanelOpen(true);
 
-            // 查找播放速度設定
-            const settings = artPlayerRef.current.setting;
-            if (settings && settings.option && settings.option.length > 0) {
-              // 找到播放速度設定項
-              const speedSetting = settings.option.find(
-                (item: any) => item.name === 'playbackRate'
-              );
+        // --- 渲染圖層按鈕函數 ---
+        const updateCustomControls = () => {
+          if (!artPlayerRef.current) return;
+          const $controls =
+            artPlayerRef.current.template.$container.querySelector(
+              '#artplayer-custom-controls'
+            );
+          if (!$controls) return;
 
-              if (speedSetting && speedSetting.selector) {
-                // 修改每個速度選項的 onSelect 行為
-                const originalOnSelect = speedSetting.onSelect;
-                speedSetting.onSelect = function (item: any, $dom: any) {
-                  // 執行原始邏輯
-                  if (originalOnSelect) {
-                    originalOnSelect.call(this, item, $dom);
-                  } else {
-                    artPlayerRef.current.playbackRate = item.value;
-                  }
-                  // 返回 item.html 保持面板打開
-                  return item.html;
-                };
-              }
-            }
-          }, 100);
-        } catch (err) {
-          console.warn('修改播放速度設定失敗:', err);
-        }
+          // 1. 去廣告按鈕
+          const adContainer = $controls.querySelector('#ad-btn-container');
+          if (adContainer) {
+            adContainer.innerHTML = `
+              <button onclick="window.toggleAdBlock()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
+                blockAdEnabledRef.current
+                  ? 'rgba(34, 197, 94, 0.8)'
+                  : 'rgba(107, 114, 128, 0.7)'
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+              </button>
+            `;
+          }
+
+          // 2. 速度按鈕組
+          const speedContainer = $controls.querySelector(
+            '#speed-btns-container'
+          );
+          if (speedContainer) {
+            const speeds = [0.5, 0.75, 1, 1.5, 2, 3];
+            speedContainer.innerHTML = speeds
+              .map(
+                (s) => `
+              <button onclick="window.setPlaySpeed(${s})" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
+                  lastPlaybackRateRef.current === s
+                    ? 'rgba(59, 130, 246, 0.8)'
+                    : 'rgba(0, 0, 0, 0.6)'
+                }; color: white; cursor: pointer; font-size: 11px; font-weight: bold; backdrop-filter: blur(4px); transition: all 0.2s;">${s}x</button>
+            `
+              )
+              .join('');
+          }
+
+          // 3. 跳過片頭按鈕
+          const skipContainer = $controls.querySelector('#skip-btn-container');
+          if (skipContainer) {
+            skipContainer.innerHTML = `
+              <button onclick="window.toggleSkip()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
+                skipConfigRef.current.enable
+                  ? 'rgba(34, 197, 94, 0.8)'
+                  : 'rgba(107, 114, 128, 0.7)'
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+              </button>
+            `;
+          }
+
+          // 4. 設定按鈕
+          const settingsContainer = $controls.querySelector(
+            '#settings-btn-container'
+          );
+          if (settingsContainer) {
+            settingsContainer.innerHTML = `
+              <button onclick="window.openSettings()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.6); color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              </button>
+            `;
+          }
+        };
+
+        // 初始渲染
+        updateCustomControls();
+
+        // 監聽控制欄顯示事件，顯示同步圖層
+        artPlayerRef.current.on('control', (state: boolean) => {
+          const $layer = artPlayerRef.current.layers['custom-controls'];
+          if ($layer) $layer.style.display = state ? 'flex' : 'none';
+        });
+
+        // 當狀態變化時重新渲染按鈕 (需要一個全域監聽點，或是直接在 ready 監聽播放器事件)
+        artPlayerRef.current.on('video:ratechange', updateCustomControls);
+        (window as any).refreshCustomControls = updateCustomControls;
       });
 
       // 监听播放状态变化，控制 Wake Lock
@@ -2101,144 +2162,6 @@ function PlayPageClient() {
                         </>
                       )}
                     </div>
-                  </div>
-                )}
-
-                {/* 全螢幕控制欄 - 與 ArtPlayer 控制欄同步顯示 */}
-                {isFullscreen && showFullscreenControls && (
-                  <div className='absolute top-4 right-4 z-[9999] flex gap-2 animate-fade-in'>
-                    {/* 去廣告按鈕 */}
-                    <button
-                      onClick={() => {
-                        handleBlockAdToggle();
-                        setShowFullscreenControls(false);
-                      }}
-                      className={`w-12 h-12 flex items-center justify-center backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg ${
-                        blockAdEnabled
-                          ? 'bg-green-500/80 hover:bg-green-600/90'
-                          : 'bg-gray-500/70 hover:bg-gray-600/90'
-                      }`}
-                      aria-label='去廣告'
-                    >
-                      <svg
-                        className='w-6 h-6 text-white'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636'
-                        />
-                      </svg>
-                    </button>
-
-                    {/* 播放速度按鈕組 */}
-                    {[0.5, 0.75, 1, 1.5, 2, 3].map((speed) => (
-                      <button
-                        key={speed}
-                        onClick={() => {
-                          handleSpeedChange(speed);
-                        }}
-                        className={`w-12 h-12 flex items-center justify-center backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg ${
-                          lastPlaybackRateRef.current === speed
-                            ? 'bg-blue-500/80 hover:bg-blue-600/90'
-                            : 'bg-black/70 hover:bg-black/90'
-                        }`}
-                        aria-label={`${speed}x 速度`}
-                      >
-                        <span className='text-white text-xs font-bold'>
-                          {speed}x
-                        </span>
-                      </button>
-                    ))}
-
-                    {/* 跳過片頭片尾按鈕 */}
-                    <button
-                      onClick={() => {
-                        handleSkipConfigChange({
-                          ...skipConfig,
-                          enable: !skipConfig.enable,
-                        });
-                      }}
-                      className={`w-12 h-12 flex items-center justify-center backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg ${
-                        skipConfig.enable
-                          ? 'bg-green-500/80 hover:bg-green-600/90'
-                          : 'bg-gray-500/70 hover:bg-gray-600/90'
-                      }`}
-                      aria-label='跳過片頭片尾'
-                    >
-                      <svg
-                        className='w-6 h-6 text-white'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M13 5l7 7-7 7M5 5l7 7-7 7'
-                        />
-                      </svg>
-                    </button>
-
-                    {/* 下載按鈕 */}
-                    <button
-                      onClick={() => {
-                        setIsSettingsPanelOpen(true);
-                        setShowFullscreenControls(false);
-                        // 可以添加自動展開下載區塊的邏輯
-                      }}
-                      className='w-12 h-12 flex items-center justify-center bg-blue-500/80 hover:bg-blue-600/90 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg'
-                      aria-label='下載'
-                    >
-                      <svg
-                        className='w-6 h-6 text-white'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'
-                        />
-                      </svg>
-                    </button>
-
-                    {/* 設定按鈕 */}
-                    <button
-                      onClick={() => {
-                        setIsSettingsPanelOpen(true);
-                        setShowFullscreenControls(false);
-                      }}
-                      className='w-12 h-12 flex items-center justify-center bg-black/70 hover:bg-black/90 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg'
-                      aria-label='設定'
-                    >
-                      <svg
-                        className='w-6 h-6 text-white'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
-                        />
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M15 12a3 3 0 11-6 0 3 3 0 016 0z'
-                        />
-                      </svg>
-                    </button>
                   </div>
                 )}
 
