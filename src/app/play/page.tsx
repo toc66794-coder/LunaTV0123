@@ -1547,32 +1547,36 @@ function PlayPageClient() {
           requestWakeLock();
         }
 
-        // 修復播放速度設定 - 移除原生設定並添加不會隱藏的版本
+        // 修復播放速度設定 - 修改原生設定的行為
         try {
-          // 移除原生播放速度設定
-          artPlayerRef.current.setting.remove('playbackRate');
+          // 等待一小段時間確保設定已初始化
+          setTimeout(() => {
+            if (!artPlayerRef.current) return;
 
-          // 添加自定義播放速度設定(不會隱藏)
-          artPlayerRef.current.setting.add({
-            name: 'playbackRate',
-            html: '播放速度',
-            tooltip: '1.0x',
-            icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
-            selector: [
-              { html: '0.5x', value: 0.5 },
-              { html: '0.75x', value: 0.75 },
-              { html: '1.0x', value: 1, default: true },
-              { html: '1.25x', value: 1.25 },
-              { html: '1.5x', value: 1.5 },
-              { html: '2.0x', value: 2 },
-              { html: '3.0x', value: 3 },
-            ],
-            onSelect: function (item: any) {
-              artPlayerRef.current.playbackRate = item.value;
-              // 返回 item.html 以保持面板打開,不返回則會隱藏
-              return item.html;
-            },
-          });
+            // 查找播放速度設定
+            const settings = artPlayerRef.current.setting;
+            if (settings && settings.option && settings.option.length > 0) {
+              // 找到播放速度設定項
+              const speedSetting = settings.option.find(
+                (item: any) => item.name === 'playbackRate'
+              );
+
+              if (speedSetting && speedSetting.selector) {
+                // 修改每個速度選項的 onSelect 行為
+                const originalOnSelect = speedSetting.onSelect;
+                speedSetting.onSelect = function (item: any, $dom: any) {
+                  // 執行原始邏輯
+                  if (originalOnSelect) {
+                    originalOnSelect.call(this, item, $dom);
+                  } else {
+                    artPlayerRef.current.playbackRate = item.value;
+                  }
+                  // 返回 item.html 保持面板打開
+                  return item.html;
+                };
+              }
+            }
+          }, 100);
         } catch (err) {
           console.warn('修改播放速度設定失敗:', err);
         }
