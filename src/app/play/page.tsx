@@ -294,12 +294,15 @@ function PlayPageClient() {
     videoContainerRef: artRef,
     longPressDelay: 500,
     onLongPressStart: () => {
+      console.log('[Gestures] onLongPressStart triggered');
       if (artPlayerRef.current) {
         speedBeforeLongPress.current = artPlayerRef.current.playbackRate;
         artPlayerRef.current.playbackRate = 3;
         artPlayerRef.current.notice.show = '3x 速播放中';
         // 同時關閉其他手勢指示器，避免干擾
         setGestureIndicator({ show: false, type: 'volume', value: 0 });
+      } else {
+        console.warn('[Gestures] artPlayerRef.current is null on long press');
       }
     },
     onLongPressEnd: () => {

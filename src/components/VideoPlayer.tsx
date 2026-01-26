@@ -415,29 +415,50 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       const container = artRef.current;
       if (!container) return;
 
-      const handleTouchStart = (e: TouchEvent) => rest.onTouchStart?.(e as any);
-      const handleTouchMove = (e: TouchEvent) => rest.onTouchMove?.(e as any);
-      const handleTouchEnd = (e: TouchEvent) => rest.onTouchEnd?.(e as any);
-      const handleContextMenu = (e: MouseEvent) =>
+      // 使用 capture: true 確保優先於 ArtPlayer 內部元素獲取事件
+      // 使用 native handlers 並在組件卸載時清理
+      const onTouchStart = (e: TouchEvent) => {
+        rest.onTouchStart?.(e as any);
+      };
+      const onTouchMove = (e: TouchEvent) => {
+        rest.onTouchMove?.(e as any);
+      };
+      const onTouchEnd = (e: TouchEvent) => {
+        rest.onTouchEnd?.(e as any);
+      };
+      const onContextMenu = (e: MouseEvent) => {
         rest.onContextMenu?.(e as any);
+      };
 
-      // 使用 { passive: false } 強制允許 preventDefault
-      container.addEventListener('touchstart', handleTouchStart, {
+      container.addEventListener('touchstart', onTouchStart, {
         passive: false,
+        capture: true,
       });
-      container.addEventListener('touchmove', handleTouchMove, {
+      container.addEventListener('touchmove', onTouchMove, {
         passive: false,
+        capture: true,
       });
-      container.addEventListener('touchend', handleTouchEnd, {
+      container.addEventListener('touchend', onTouchEnd, {
         passive: false,
+        capture: true,
       });
-      container.addEventListener('contextmenu', handleContextMenu);
+      container.addEventListener('contextmenu', onContextMenu, {
+        capture: true,
+      });
 
       return () => {
-        container.removeEventListener('touchstart', handleTouchStart);
-        container.removeEventListener('touchmove', handleTouchMove);
-        container.removeEventListener('touchend', handleTouchEnd);
-        container.removeEventListener('contextmenu', handleContextMenu);
+        container.removeEventListener('touchstart', onTouchStart, {
+          capture: true,
+        });
+        container.removeEventListener('touchmove', onTouchMove, {
+          capture: true,
+        });
+        container.removeEventListener('touchend', onTouchEnd, {
+          capture: true,
+        });
+        container.removeEventListener('contextmenu', onContextMenu, {
+          capture: true,
+        });
       };
     }, [rest]);
 
@@ -450,11 +471,16 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           userSelect: 'none',
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
+          touchAction: 'none',
         }}
+        // 保留 React 事件處理程序作為備選
         onMouseDown={rest.onMouseDown}
         onMouseMove={rest.onMouseMove}
         onMouseUp={rest.onMouseUp}
         onMouseLeave={rest.onMouseLeave}
+        onTouchStart={rest.onTouchStart}
+        onTouchMove={rest.onTouchMove}
+        onTouchEnd={rest.onTouchEnd}
       />
     );
   }
