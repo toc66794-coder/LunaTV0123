@@ -1546,6 +1546,36 @@ function PlayPageClient() {
         if (artPlayerRef.current && !artPlayerRef.current.paused) {
           requestWakeLock();
         }
+
+        // 修復播放速度設定 - 移除原生設定並添加不會隱藏的版本
+        try {
+          // 移除原生播放速度設定
+          artPlayerRef.current.setting.remove('playbackRate');
+
+          // 添加自定義播放速度設定(不會隱藏)
+          artPlayerRef.current.setting.add({
+            name: 'playbackRate',
+            html: '播放速度',
+            tooltip: '1.0x',
+            icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+            selector: [
+              { html: '0.5x', value: 0.5 },
+              { html: '0.75x', value: 0.75 },
+              { html: '1.0x', value: 1, default: true },
+              { html: '1.25x', value: 1.25 },
+              { html: '1.5x', value: 1.5 },
+              { html: '2.0x', value: 2 },
+              { html: '3.0x', value: 3 },
+            ],
+            onSelect: function (item: any) {
+              artPlayerRef.current.playbackRate = item.value;
+              // 返回 item.html 以保持面板打開,不返回則會隱藏
+              return item.html;
+            },
+          });
+        } catch (err) {
+          console.warn('修改播放速度設定失敗:', err);
+        }
       });
 
       // 监听播放状态变化，控制 Wake Lock
