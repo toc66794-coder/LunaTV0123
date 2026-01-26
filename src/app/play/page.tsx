@@ -1518,9 +1518,65 @@ function PlayPageClient() {
         },
         settings: [
           {
-            html: '設定',
+            html: '跳過片頭片尾',
+            icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>',
+            selector: [
+              {
+                html: '開關設定',
+                switch: skipConfigRef.current.enable,
+                onSwitch: function (item: any) {
+                  handleSkipConfigChange({
+                    ...skipConfigRef.current,
+                    enable: !item.switch,
+                  });
+                  return !item.switch;
+                },
+              },
+              {
+                html: '設當前為片頭',
+                onClick: function () {
+                  const time = artPlayerRef.current.currentTime;
+                  handleSkipConfigChange({
+                    ...skipConfigRef.current,
+                    intro_time: time,
+                  });
+                  artPlayerRef.current.notice.show = `已設片頭: ${Math.round(
+                    time
+                  )}s`;
+                },
+              },
+              {
+                html: '設當前為片尾',
+                onClick: function () {
+                  const duration = artPlayerRef.current.duration;
+                  const time = artPlayerRef.current.currentTime;
+                  const offset = -(duration - time);
+                  handleSkipConfigChange({
+                    ...skipConfigRef.current,
+                    outro_time: offset,
+                  });
+                  artPlayerRef.current.notice.show = `已設片尾: ${Math.round(
+                    offset
+                  )}s`;
+                },
+              },
+              {
+                html: '清除設定',
+                onClick: function () {
+                  handleSkipConfigChange({
+                    enable: false,
+                    intro_time: 0,
+                    outro_time: 0,
+                  });
+                  artPlayerRef.current.notice.show = '設定已清除';
+                },
+              },
+            ],
+          },
+          {
+            html: '全部設定',
             icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
-            tooltip: '播放器設定',
+            tooltip: '打開進階設定',
             onClick: function () {
               setIsSettingsPanelOpen(true);
             },
