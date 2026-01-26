@@ -188,15 +188,19 @@ export const useVideoGestures = ({
     },
     [onLongPressEnd, onSeekBackward, onSeekForward, videoContainerRef]
   );
-
   return {
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+    },
     onTouchStart: (e: React.TouchEvent) => {
       e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
       const touch = e.touches[0];
       handleStart(touch.clientX, touch.clientY, true);
     },
     onTouchMove: (e: React.TouchEvent) => {
       e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
       const touch = e.touches[0];
       handleMove(touch.clientX, touch.clientY);
     },

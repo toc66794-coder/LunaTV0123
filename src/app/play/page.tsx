@@ -670,7 +670,7 @@ function PlayPageClient() {
         else if (optimizationEnabled) {
           setLoadingStage('preferring');
           setLoadingMessage('⚡ 正在為您優選最佳線路...');
-          finalDetail = await preferBestSource(sourcesInfo);
+          finalDetail = await handlePreferBestSource(sourcesInfo);
         }
 
         if (finalDetail) {
@@ -1668,6 +1668,7 @@ function PlayPageClient() {
                   style={{
                     filter: `brightness(${brightness}%)`,
                     transition: 'filter 0.1s ease-out',
+                    touchAction: 'none',
                   }}
                   option={{
                     url: videoUrl,
@@ -1730,6 +1731,7 @@ function PlayPageClient() {
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
                   ref={artRef}
+                  onContextMenu={videoGestures.onContextMenu as any}
                   onTouchStart={videoGestures.onTouchStart}
                   onTouchMove={videoGestures.onTouchMove}
                   onTouchEnd={videoGestures.onTouchEnd}
