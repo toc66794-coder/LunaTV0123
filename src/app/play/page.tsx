@@ -271,6 +271,34 @@ function PlayPageClient() {
     };
   }, []);
 
+  // 全螢幕控制欄顯示狀態
+  const [showFullscreenControls, setShowFullscreenControls] = useState(false);
+  const fullscreenControlsTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // 切換全螢幕控制欄顯示
+  const toggleFullscreenControls = () => {
+    setShowFullscreenControls((prev) => !prev);
+
+    // 如果顯示控制欄,3秒後自動隱藏
+    if (!showFullscreenControls) {
+      if (fullscreenControlsTimeout.current) {
+        clearTimeout(fullscreenControlsTimeout.current);
+      }
+      fullscreenControlsTimeout.current = setTimeout(() => {
+        setShowFullscreenControls(false);
+      }, 3000);
+    }
+  };
+
+  // 清理自動隱藏計時器
+  useEffect(() => {
+    return () => {
+      if (fullscreenControlsTimeout.current) {
+        clearTimeout(fullscreenControlsTimeout.current);
+      }
+    };
+  }, []);
+
   // 顯示手勢反饋
   const showGestureIndicator = (
     type: 'volume' | 'brightness' | 'seek-forward' | 'seek-backward',
@@ -2045,33 +2073,50 @@ function PlayPageClient() {
                   </div>
                 )}
 
-                {/* 全螢幕設定按鈕 */}
+                {/* 全螢幕點擊區域 - 點擊切換控制欄 */}
                 {isFullscreen && (
-                  <button
-                    onClick={() => setIsSettingsPanelOpen(true)}
-                    className='absolute top-4 right-4 z-[600] w-10 h-10 flex items-center justify-center bg-black/50 hover:bg-black/70 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110'
-                    aria-label='設定'
-                  >
-                    <svg
-                      className='w-5 h-5 text-white'
-                      fill='none'
-                      stroke='currentColor'
-                      viewBox='0 0 24 24'
+                  <div
+                    onClick={toggleFullscreenControls}
+                    className='absolute inset-0 z-[550]'
+                    style={{
+                      pointerEvents: showFullscreenControls ? 'none' : 'auto',
+                    }}
+                  />
+                )}
+
+                {/* 全螢幕控制欄 */}
+                {isFullscreen && showFullscreenControls && (
+                  <div className='absolute top-4 right-4 z-[600] flex gap-2 animate-fade-in'>
+                    {/* 設定按鈕 */}
+                    <button
+                      onClick={() => {
+                        setIsSettingsPanelOpen(true);
+                        setShowFullscreenControls(false);
+                      }}
+                      className='w-12 h-12 flex items-center justify-center bg-black/70 hover:bg-black/90 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg'
+                      aria-label='設定'
                     >
-                      <path
-                        strokeLinecap='round'
-                        strokeLinejoin='round'
-                        strokeWidth={2}
-                        d='M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
-                      />
-                      <path
-                        strokeLinecap='round'
-                        strokeLinejoin='round'
-                        strokeWidth={2}
-                        d='M15 12a3 3 0 11-6 0 3 3 0 016 0z'
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        className='w-6 h-6 text-white'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
+                        />
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M15 12a3 3 0 11-6 0 3 3 0 016 0z'
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 )}
 
                 {/* 换源加载蒙层 */}
