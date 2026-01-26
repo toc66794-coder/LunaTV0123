@@ -1161,7 +1161,7 @@ function PlayPageClient() {
   // 播放记录相关
   // ---------------------------------------------------------------------------
   // 保存播放进度
-  const saveCurrentPlayProgress = async () => {
+  const saveCurrentPlayProgress = async (force = false) => {
     if (
       !artPlayerRef.current ||
       !currentSourceRef.current ||
@@ -1176,24 +1176,29 @@ function PlayPageClient() {
     const currentTime = player.currentTime || 0;
     const duration = player.duration || 0;
 
-    // 如果播放时间太短（少于5秒）或者视频时长无效，不保存
+    // 如果播放时间太短（少于1秒）或者视频时长无效，不保存
     if (currentTime < 1 || !duration) {
       return;
     }
 
     try {
-      await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
-        title: videoTitleRef.current,
-        source_name: detailRef.current?.source_name || '',
-        year: detailRef.current?.year,
-        cover: detailRef.current?.poster || '',
-        index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
-        play_time: Math.floor(currentTime),
-        total_time: Math.floor(duration),
-        save_time: Date.now(),
-        search_title: searchTitle,
-      });
+      await savePlayRecord(
+        currentSourceRef.current,
+        currentIdRef.current,
+        {
+          title: videoTitleRef.current,
+          source_name: detailRef.current?.source_name || '',
+          year: detailRef.current?.year,
+          cover: detailRef.current?.poster || '',
+          index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
+          total_episodes: detailRef.current?.episodes.length || 1,
+          play_time: Math.floor(currentTime),
+          total_time: Math.floor(duration),
+          save_time: Date.now(),
+          search_title: searchTitle,
+        },
+        force
+      );
 
       lastSaveTimeRef.current = Date.now();
       console.log('播放进度已保存:', {
@@ -1210,7 +1215,7 @@ function PlayPageClient() {
   useEffect(() => {
     // 页面即将卸载时保存播放进度和清理资源
     const handleBeforeUnload = () => {
-      saveCurrentPlayProgress();
+      saveCurrentPlayProgress(true); // 強制同步
       releaseWakeLock();
       cleanupPlayer();
     };
@@ -1218,7 +1223,7 @@ function PlayPageClient() {
     // 页面可见性变化时保存播放进度和释放 Wake Lock
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress(true); // 強制同步
         releaseWakeLock();
       } else if (document.visibilityState === 'visible') {
         // 页面重新可见时，如果正在播放则重新请求 Wake Lock
@@ -1834,18 +1839,17 @@ function PlayPageClient() {
 
       artPlayerRef.current.on('video:timeupdate', () => {
         const now = Date.now();
-        let interval = 5000;
-        if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'upstash') {
-          interval = 20000;
-        }
+        // 統一優化為 60 秒定時儲存一次資料庫，減少免費額度消耗
+        const interval = 60000;
+
         if (now - lastSaveTimeRef.current > interval) {
-          saveCurrentPlayProgress();
+          saveCurrentPlayProgress(false); // 定時儲存使用節流
           lastSaveTimeRef.current = now;
         }
       });
 
       artPlayerRef.current.on('pause', () => {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress(true); // 暫停時強制同步資料庫，確保安全
       });
 
       if (artPlayerRef.current?.video) {

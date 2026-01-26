@@ -96,6 +96,10 @@ const STORAGE_TYPE = (() => {
 // 搜索历史最大保存条数
 const SEARCH_HISTORY_LIMIT = 20;
 
+// API 節流相關（僅客戶端）
+const apiSyncThrottles: Record<string, number> = {};
+const SYNC_THROTTLE_INTERVAL = 60 * 1000; // 60 秒節流
+
 // ---- 缓存管理器 ----
 class HybridCacheManager {
   private static instance: HybridCacheManager;
@@ -574,25 +578,34 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
 export async function savePlayRecord(
   source: string,
   id: string,
-  record: PlayRecord
+  record: PlayRecord,
+  force = false // 是否強制同步到資料庫
 ): Promise<void> {
   const key = generateStorageKey(source, id);
 
-  // 数据库存储模式：乐观更新策略（包括 redis 和 upstash）
+  // 1. 始終立即更新本地緩存（保證重整頁面後進度準確）
+  const cachedRecords = cacheManager.getCachedPlayRecords() || {};
+  cachedRecords[key] = record;
+  cacheManager.cachePlayRecords(cachedRecords);
+
+  // 觸發立即更新事件，通知 UI 元件
+  window.dispatchEvent(
+    new CustomEvent('playRecordsUpdated', {
+      detail: cachedRecords,
+    })
+  );
+
+  // 2. 判斷是否需要同步到資料庫（節流處理）
+  const now = Date.now();
+  const lastSync = apiSyncThrottles[key] || 0;
+
+  if (!force && now - lastSync < SYNC_THROTTLE_INTERVAL) {
+    // 節流中，不發送 API 請求
+    return;
+  }
+
+  // 3. 執行資料庫同步
   if (STORAGE_TYPE !== 'localstorage') {
-    // 立即更新缓存
-    const cachedRecords = cacheManager.getCachedPlayRecords() || {};
-    cachedRecords[key] = record;
-    cacheManager.cachePlayRecords(cachedRecords);
-
-    // 触发立即更新事件
-    window.dispatchEvent(
-      new CustomEvent('playRecordsUpdated', {
-        detail: cachedRecords,
-      })
-    );
-
-    // 异步同步到数据库
     try {
       await fetchWithAuth('/api/playrecords', {
         method: 'POST',
@@ -601,6 +614,8 @@ export async function savePlayRecord(
         },
         body: JSON.stringify({ key, record }),
       });
+      // 更新最後同步時間
+      apiSyncThrottles[key] = now;
     } catch (err) {
       await handleDatabaseOperationFailure('playRecords', err);
       triggerGlobalError('保存播放记录失败');
