@@ -64,12 +64,49 @@ export default function Prewarmer({ items }: PrewarmerProps) {
         } else {
           console.log(`[Prewarmer] Warming up: ${item.title}...`);
 
-          // 2. 背景執行測速流程
+          // 2. 背景執行預熱流程 (搜尋 -> 獲取結果 -> 寫入快取)
           const searchTitle = toSimplified(item.title);
-          await fetch(`/api/search/ws?q=${encodeURIComponent(searchTitle)}`);
+          const searchRes = await fetch(
+            `/api/search?q=${encodeURIComponent(searchTitle)}`
+          );
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            const results = searchData.results || [];
 
-          // 註：這僅觸發後端搜尋與緩存，真正的詳細測速在播放頁面完成後會自動沈澱到快取。
-          console.log(`[Prewarmer] Search triggered for: ${item.title}`);
+            // 匹配正確的影片 (標題與年份)
+            const match = results.find(
+              (r: any) =>
+                r.title.replaceAll(' ', '').toLowerCase() ===
+                  item.title.replaceAll(' ', '').toLowerCase() &&
+                (!item.year || r.year === item.year)
+            );
+
+            if (match) {
+              console.log(
+                `[Prewarmer] Found candidate for ${item.title}, saving cache...`
+              );
+              // 獲取詳情並沈澱
+              const detailRes = await fetch(
+                `/api/detail?source=${match.source}&id=${match.id}`
+              );
+              if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                // 寫入快取
+                await fetch('/api/admin/cache', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: item.title,
+                    year: item.year,
+                    source: detailData.source,
+                    id: detailData.id,
+                    source_name: detailData.source_name,
+                  }),
+                });
+                console.log(`[Prewarmer] Cache warmed for: ${item.title}`);
+              }
+            }
+          }
         }
       } catch (e) {
         console.warn(`[Prewarmer] Failed for ${item.title}`, e);

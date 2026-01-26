@@ -122,6 +122,24 @@ function HomeClient() {
           checkBatchCache(varietyShowsData.list);
         }
 
+        if (bangumiCalendarData && bangumiCalendarData.length > 0) {
+          // 提取今日番劇進行快取檢查
+          const today = new Date();
+          const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const currentWeekday = weekdays[today.getDay()];
+          const todayItems =
+            bangumiCalendarData.find((it) => it.weekday.en === currentWeekday)
+              ?.items || [];
+          if (todayItems.length > 0) {
+            checkBatchCache(
+              todayItems.map((it) => ({
+                title: it.name_cn || it.name,
+                year: it.air_date?.split('-')?.[0] || '',
+              }))
+            );
+          }
+        }
+
         setBangumiCalendarData(bangumiCalendarData);
       } catch (error) {
         console.error('获取推荐数据失败:', error);
@@ -420,6 +438,13 @@ function HomeClient() {
                               rate={anime.rating?.score?.toFixed(1) || ''}
                               year={anime.air_date?.split('-')?.[0] || ''}
                               isBangumi={true}
+                              isCached={
+                                cacheStatus[
+                                  `${anime.name_cn || anime.name}_${
+                                    anime.air_date?.split('-')?.[0] || ''
+                                  }`
+                                ]
+                              }
                             />
                           </div>
                         ));
