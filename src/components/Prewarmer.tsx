@@ -8,13 +8,14 @@ import { toSimplified } from '@/lib/chinese';
 
 interface PrewarmerProps {
   items: Array<{ title: string; year?: string }>;
+  onCacheUpdate?: (key: string) => void;
 }
 
 /**
  * Prewarmer 組件：管理員專用背景預熱器
  * 邏輯：獲取列表中的影片 -> 檢查快取 -> 未命中則背景測速 -> 儲存結果
  */
-export default function Prewarmer({ items }: PrewarmerProps) {
+export default function Prewarmer({ items, onCacheUpdate }: PrewarmerProps) {
   const [userRole, setUserRole] = useState<string | undefined>(undefined);
   const processedRef = useRef<Set<string>>(new Set());
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -116,7 +117,9 @@ export default function Prewarmer({ items }: PrewarmerProps) {
                   }),
                 });
                 console.log(`[Prewarmer] 🔥 Cache warmed for: ${item.title}`);
-                // 可選：在這裡觸發 UI Toast
+                if (onCacheUpdate) {
+                  onCacheUpdate(`${item.title}_${item.year || ''}`);
+                }
               }
             } else {
               console.log(`[Prewarmer] No match found for: ${item.title}`);

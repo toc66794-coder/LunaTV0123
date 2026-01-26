@@ -507,7 +507,12 @@ function HomeClient() {
       </div>
 
       {/* 管理員專用：預熱當前熱門資源 */}
-      <Prewarmer items={[...hotMovies, ...hotTvShows, ...hotVarietyShows]} />
+      <Prewarmer
+        items={[...hotMovies, ...hotTvShows, ...hotVarietyShows]}
+        onCacheUpdate={(key) =>
+          setCacheStatus((prev) => ({ ...prev, [key]: true }))
+        }
+      />
 
       {announcement && showAnnouncement && (
         <div
