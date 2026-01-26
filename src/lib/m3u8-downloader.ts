@@ -1,37 +1,73 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * 解析 M3U8 播放列表,提取所有 .ts 片段 URL
+ * 解析 M3U8 内容并提取真正的数据流地址或片段地址
  */
-function parseM3U8(content: string, baseUrl: string): string[] {
+async function resolveMediaPlaylist(
+  m3u8Url: string
+): Promise<{ url: string; content: string }> {
+  const response = await fetch(m3u8Url);
+  if (!response.ok) throw new Error('無法獲取 M3U8 列表');
+  const text = await response.text();
+
+  // 如果是 Master Playlist (包含不同的清晰度流)
+  if (text.includes('#EXT-X-STREAM-INF')) {
+    const lines = text.split('\n');
+    let bestStreamUrl = '';
+    let maxBandwidth = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes('#EXT-X-STREAM-INF')) {
+        // 嘗試解析 BANDWIDTH
+        const bandwidthMatch = lines[i].match(/BANDWIDTH=(\d+)/);
+        const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1]) : 0;
+
+        const nextLine = lines[i + 1]?.trim();
+        if (nextLine && !nextLine.startsWith('#')) {
+          if (bandwidth > maxBandwidth) {
+            maxBandwidth = bandwidth;
+            bestStreamUrl = nextLine;
+          }
+        }
+      }
+    }
+
+    if (bestStreamUrl) {
+      const absoluteUrl = bestStreamUrl.startsWith('http')
+        ? bestStreamUrl
+        : new URL(bestStreamUrl, m3u8Url).href;
+      console.log('解析到 Master Playlist，選擇最高質量流:', absoluteUrl);
+      return resolveMediaPlaylist(absoluteUrl); // 遞迴解析子列表
+    }
+  }
+
+  return { url: m3u8Url, content: text };
+}
+
+/**
+ * 提取片段 URL
+ */
+function parseSegments(content: string, baseUrl: string): string[] {
   const lines = content.split('\n');
   const tsUrls: string[] = [];
   const baseUrlObj = new URL(baseUrl);
 
   for (const line of lines) {
     const trimmed = line.trim();
-    // 跳過註釋和空行
     if (trimmed && !trimmed.startsWith('#')) {
       try {
-        // 處理絕對路徑和相對路徑
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-          tsUrls.push(trimmed);
-        } else {
-          const url = new URL(trimmed, baseUrlObj.href);
-          tsUrls.push(url.href);
-        }
-      } catch (error) {
-        console.warn('無法解析 URL:', trimmed, error);
+        const url = new URL(trimmed, baseUrlObj.href);
+        tsUrls.push(url.href);
+      } catch (e) {
+        console.warn('URL 解析失敗:', trimmed);
       }
     }
   }
-
   return tsUrls;
 }
 
 /**
  * 在瀏覽器中下載 M3U8 視頻
- * 注意: 此功能為實驗性,可能受 CORS 限制
  */
 export async function downloadM3U8InBrowser(
   m3u8Url: string,
@@ -39,71 +75,76 @@ export async function downloadM3U8InBrowser(
   onProgress?: (progress: number, current: number, total: number) => void
 ): Promise<{ success: boolean; error?: any }> {
   try {
-    // 1. 獲取 m3u8 播放列表
-    const m3u8Response = await fetch(m3u8Url);
-    if (!m3u8Response.ok) {
-      throw new Error(`無法獲取 M3U8: ${m3u8Response.statusText}`);
-    }
-    const m3u8Text = await m3u8Response.text();
+    // 1. 解析出真正的 Media Playlist (處理 Master Playlist 嵌套)
+    const { url: finalMediaUrl, content: mediaContent } =
+      await resolveMediaPlaylist(m3u8Url);
 
-    // 2. 解析出所有 .ts 片段 URL
-    const tsUrls = parseM3U8(m3u8Text, m3u8Url);
-    if (tsUrls.length === 0) {
-      throw new Error('未找到視頻片段');
-    }
+    // 2. 提取所有 .ts 片段
+    const tsUrls = parseSegments(mediaContent, finalMediaUrl);
+    if (tsUrls.length === 0) throw new Error('未找到有效的視頻片段地址');
 
-    console.log(`找到 ${tsUrls.length} 個視頻片段`);
+    console.log(`開始下載 ${tsUrls.length} 個片段...`);
 
-    // 3. 下載所有片段
+    // 3. 併發/順序下載片段
     const segments: ArrayBuffer[] = [];
+    let failedCount = 0;
+
     for (let i = 0; i < tsUrls.length; i++) {
       try {
-        const response = await fetch(tsUrls[i]);
-        if (!response.ok) {
-          console.warn(`片段 ${i + 1} 下載失敗,跳過`);
-          continue;
-        }
-        const buffer = await response.arrayBuffer();
-        segments.push(buffer);
+        const res = await fetch(tsUrls[i]);
+        if (!res.ok) throw new Error('下載失敗');
+        const buf = await res.arrayBuffer();
 
-        // 更新進度
+        // 簡單校驗：如果下載的內容太小（例如小於 100 字節），且內容是文本，通常是錯誤頁面
+        if (buf.byteLength < 500) {
+          const decoder = new TextDecoder();
+          const text = decoder.decode(buf);
+          if (text.includes('#EXTM3U') || text.includes('<html>')) {
+            throw new Error('下載到了錯誤的內容檔案');
+          }
+        }
+
+        segments.push(buf);
+
         const progress = ((i + 1) / tsUrls.length) * 100;
         onProgress?.(progress, i + 1, tsUrls.length);
-      } catch (error) {
-        console.warn(`片段 ${i + 1} 下載失敗:`, error);
+      } catch (err) {
+        console.error(`片段 ${i} 下載失敗:`, err);
+        failedCount++;
+        // 如果失敗比例過高 (>20%)，中斷下載
+        if (failedCount > tsUrls.length * 0.2 && tsUrls.length > 10) {
+          throw new Error('多個視頻片段下載失敗，可能受 CORS 限制或網絡問題');
+        }
       }
     }
 
-    if (segments.length === 0) {
-      throw new Error('所有片段下載失敗');
-    }
+    if (segments.length === 0) throw new Error('所有片段下載失敗');
 
-    // 4. 合併所有片段
-    const totalLength = segments.reduce((sum, seg) => sum + seg.byteLength, 0);
-    const merged = new Uint8Array(totalLength);
+    // 4. 合併片段
+    const totalSize = segments.reduce((acc, b) => acc + b.byteLength, 0);
+    const merged = new Uint8Array(totalSize);
     let offset = 0;
-    for (const segment of segments) {
-      merged.set(new Uint8Array(segment), offset);
-      offset += segment.byteLength;
+    for (const b of segments) {
+      merged.set(new Uint8Array(b), offset);
+      offset += b.byteLength;
     }
 
-    // 5. 創建 Blob 並觸發下載
+    // 5. 觸發下載 (對於 TS 流，有些播放器更喜歡 .mp4 擴展名來嘗試播放)
+    // 雖然技術上是 MPEG-TS，但為了移動端和大部分播放器兼容，我們提示為 .mp4
     const blob = new Blob([merged], { type: 'video/mp2t' });
-    const url = URL.createObjectURL(blob);
-
+    const downloadUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `${filename}.ts`;
+    a.href = downloadUrl;
+    // 使用 .mp4 擴展名以增加文件系統和普通播放器的兼容性
+    a.download = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
-    // 清理
-    setTimeout(() => URL.revokeObjectURL(url), 100);
-
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
     return { success: true };
-  } catch (error) {
-    console.error('下載失敗:', error);
-    return { success: false, error };
+  } catch (error: any) {
+    console.error('M3U8 下載核心錯誤:', error);
+    return { success: false, error: error.message || '下載失敗' };
   }
 }
