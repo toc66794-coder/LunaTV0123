@@ -46,7 +46,7 @@ interface WakeLockSentinel {
 }
 
 // 动态导入 VideoPlayer 组件 (SSR 禁用)
-const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
+const VideoPlayer = dynamic(() => import('../../components/VideoPlayer'), {
   ssr: false,
   loading: () => (
     <div className='w-full h-full bg-black flex items-center justify-center text-white/50'>
