@@ -2087,6 +2087,109 @@ function PlayPageClient() {
                 {/* 全螢幕控制欄 */}
                 {isFullscreen && showFullscreenControls && (
                   <div className='absolute top-4 right-4 z-[600] flex gap-2 animate-fade-in'>
+                    {/* 去廣告按鈕 */}
+                    <button
+                      onClick={() => {
+                        handleBlockAdToggle();
+                        setShowFullscreenControls(false);
+                      }}
+                      className={`w-12 h-12 flex items-center justify-center backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg ${
+                        blockAdEnabled
+                          ? 'bg-green-500/80 hover:bg-green-600/90'
+                          : 'bg-gray-500/70 hover:bg-gray-600/90'
+                      }`}
+                      aria-label='去廣告'
+                    >
+                      <svg
+                        className='w-6 h-6 text-white'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636'
+                        />
+                      </svg>
+                    </button>
+
+                    {/* 播放速度按鈕 */}
+                    <button
+                      onClick={() => {
+                        // 循環切換速度: 1x -> 1.5x -> 2x -> 1x
+                        const speeds = [1, 1.5, 2];
+                        const currentIndex = speeds.indexOf(
+                          lastPlaybackRateRef.current
+                        );
+                        const nextSpeed =
+                          speeds[(currentIndex + 1) % speeds.length];
+                        handleSpeedChange(nextSpeed);
+                      }}
+                      className='w-12 h-12 flex items-center justify-center bg-black/70 hover:bg-black/90 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg'
+                      aria-label='播放速度'
+                    >
+                      <span className='text-white text-sm font-bold'>
+                        {lastPlaybackRateRef.current}x
+                      </span>
+                    </button>
+
+                    {/* 跳過片頭片尾按鈕 */}
+                    <button
+                      onClick={() => {
+                        onSkipConfigChange({
+                          ...skipConfig,
+                          enable: !skipConfig.enable,
+                        });
+                      }}
+                      className={`w-12 h-12 flex items-center justify-center backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg ${
+                        skipConfig.enable
+                          ? 'bg-green-500/80 hover:bg-green-600/90'
+                          : 'bg-gray-500/70 hover:bg-gray-600/90'
+                      }`}
+                      aria-label='跳過片頭片尾'
+                    >
+                      <svg
+                        className='w-6 h-6 text-white'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M13 5l7 7-7 7M5 5l7 7-7 7'
+                        />
+                      </svg>
+                    </button>
+
+                    {/* 下載按鈕 */}
+                    <button
+                      onClick={() => {
+                        setIsSettingsPanelOpen(true);
+                        setShowFullscreenControls(false);
+                        // 可以添加自動展開下載區塊的邏輯
+                      }}
+                      className='w-12 h-12 flex items-center justify-center bg-blue-500/80 hover:bg-blue-600/90 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg'
+                      aria-label='下載'
+                    >
+                      <svg
+                        className='w-6 h-6 text-white'
+                        fill='none'
+                        stroke='currentColor'
+                        viewBox='0 0 24 24'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          strokeWidth={2}
+                          d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'
+                        />
+                      </svg>
+                    </button>
+
                     {/* 設定按鈕 */}
                     <button
                       onClick={() => {
