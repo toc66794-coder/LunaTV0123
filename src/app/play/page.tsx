@@ -1618,6 +1618,7 @@ function PlayPageClient() {
                     aspectRatio: true,
                     fullscreen: true,
                     fullscreenWeb: true,
+                    fastForward: false,
                     subtitleOffset: true,
                     miniProgressBar: true,
                     mutex: true,
@@ -1627,7 +1628,6 @@ function PlayPageClient() {
                     airplay: true,
                     theme: '#22c55e',
                     lang: 'zh-cn',
-                    fastForward: true, // 啟用原生長按加速與快進按鈕
                     autoOrientation: true,
                     lock: true,
                     moreVideoAttr: {

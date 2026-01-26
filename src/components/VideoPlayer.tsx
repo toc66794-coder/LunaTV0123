@@ -403,26 +403,27 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       // --- 內部手勢與狀態機實作 ---
       let startX = 0;
+      let startY = 0;
       let startTime = 0;
-      let lastY = 0;
-      let activeGestureMode: 'none' | 'dragging' | 'longpress' = 'none';
+      let activeGestureMode: 'none' | 'seeking' | 'adjusting' | 'longpress' =
+        'none';
       let longPressTimer: NodeJS.Timeout | null = null;
       let speedBeforeLongPress = 1;
       let lastTapTime = 0;
       let lastTapSide: 'left' | 'right' | null = null;
 
-      const $view = (art.template as any).$view;
-      if (!$view) return;
+      const $video = art.template.$video;
+      if (!$video) return;
 
       const handleTouchStart = (e: TouchEvent) => {
         const touch = e.touches[0];
-        const rect = $view.getBoundingClientRect();
+        const rect = $video.getBoundingClientRect();
         startX = touch.clientX - rect.left;
+        startY = touch.clientY - rect.top;
         startTime = Date.now();
-        lastY = touch.clientY;
         activeGestureMode = 'none';
 
-        // 啟動長按計時器 (0.5s)
+        // 啟動長按計時器 (500ms)
         if (longPressTimer) clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
           if (activeGestureMode === 'none') {
@@ -437,90 +438,114 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       const handleTouchMove = (e: TouchEvent) => {
         const touch = e.touches[0];
-        const rect = $view.getBoundingClientRect();
+        const rect = $video.getBoundingClientRect();
         const currentX = touch.clientX - rect.left;
+        const currentY = touch.clientY - rect.top;
 
         const deltaX = Math.abs(currentX - startX);
+        const deltaY = Math.abs(currentY - startY);
 
-        // 如果移動明顯，判定長按失效
-        if (deltaX > 150 || Math.abs(touch.clientY - lastY) > 150) {
-          if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-          }
-        }
-
-        // 進入拖動判定 (音量/亮度)
-        if (
-          activeGestureMode !== 'longpress' &&
-          activeGestureMode !== 'dragging'
-        ) {
-          if (Math.abs(touch.clientY - lastY) > 10) {
-            activeGestureMode = 'dragging';
-            lastY = touch.clientY;
-            if (longPressTimer) clearTimeout(longPressTimer);
-          }
-        }
-
-        // 執行拖動邏輯 (Mutex Lock: 如果是在 longpress 模式，則不執行拖動)
-        if (activeGestureMode === 'dragging') {
-          if (e.cancelable) e.preventDefault();
-          const yChange = lastY - touch.clientY;
-          const xPercent = startX / rect.width;
-
-          if (xPercent < 0.3) {
-            // 左側亮度 (直接改 video filter)
-            // 這裡簡單實現，實際可用內部變數
-            const change = yChange * 0.5;
-            art.notice.show = `亮度調整中...`; // 具體數值邏輯可再精化
-            if (art.video) {
-              const current =
-                art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
-                '100';
-              const next = Math.max(
-                0,
-                Math.min(200, parseInt(current) + change)
-              );
-              art.video.style.filter = `brightness(${next}%)`;
-              art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
-            }
-          } else if (xPercent > 0.7) {
-            // 右側音量
-            const volumeChange = yChange * 0.005;
-            art.volume = Math.max(0, Math.min(1, art.volume + volumeChange));
-            art.notice.show = `🔊 音量: ${Math.round(art.volume * 100)}%`;
-          }
-          lastY = touch.clientY;
-        }
-
-        // 如果在長按模式，強行攔截一切位移，防止觸發瀏覽器行為
+        // 如果已經在長按模式，阻止任何移動
         if (activeGestureMode === 'longpress') {
           if (e.cancelable) e.preventDefault();
+          // 如果移動太多，取消長按
+          if (deltaX > 50 || deltaY > 50) {
+            if (longPressTimer) clearTimeout(longPressTimer);
+            art.playbackRate = speedBeforeLongPress;
+            art.notice.show = '';
+            activeGestureMode = 'none';
+          }
+          return;
+        }
+
+        // 如果還在長按計時中且移動明顯，取消計時器
+        if (longPressTimer && (deltaX > 20 || deltaY > 20)) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+
+        // 判斷移動方向（需要達到最小閾值才判定）
+        const minMoveThreshold = 15;
+        if (deltaX < minMoveThreshold && deltaY < minMoveThreshold) {
+          return; // 移動太小，不處理
+        }
+
+        // 水平移動佔優：讓 ArtPlayer 處理進度調整
+        if (deltaX > deltaY && deltaX > minMoveThreshold) {
+          if (activeGestureMode === 'none') {
+            activeGestureMode = 'seeking';
+          }
+          // 不 preventDefault，讓 ArtPlayer 的原生手勢處理
+          return;
+        }
+
+        // 垂直移動佔優：自定義亮度/音量調整
+        if (deltaY > deltaX && deltaY > minMoveThreshold) {
+          if (activeGestureMode === 'none') {
+            activeGestureMode = 'adjusting';
+          }
+
+          if (activeGestureMode === 'adjusting') {
+            if (e.cancelable) e.preventDefault();
+
+            const yChange = startY - currentY;
+            const xPercent = startX / rect.width;
+
+            if (xPercent < 0.3) {
+              // 左側：亮度調整
+              const change = yChange * 0.5;
+              if (art.video) {
+                const current =
+                  art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
+                  '100';
+                const next = Math.max(
+                  50,
+                  Math.min(200, parseInt(current) + change)
+                );
+                art.video.style.filter = `brightness(${next}%)`;
+                art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
+              }
+            } else if (xPercent > 0.7) {
+              // 右側：音量調整
+              const volumeChange = yChange * 0.003;
+              const newVolume = Math.max(
+                0,
+                Math.min(1, art.volume + volumeChange)
+              );
+              art.volume = newVolume;
+              art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
+            }
+
+            startY = currentY; // 更新起點，實現連續調整
+          }
         }
       };
 
       const handleTouchEnd = (e: TouchEvent) => {
         if (longPressTimer) clearTimeout(longPressTimer);
 
-        // 如果剛才是長按模式，恢復速度
+        // 長按模式結束
         if (activeGestureMode === 'longpress') {
           art.playbackRate = speedBeforeLongPress;
           art.notice.show = '';
           activeGestureMode = 'none';
-          lastTapTime = 0; // 鎖死點擊，防止放開時變雙擊
+          lastTapTime = 0;
           return;
         }
 
-        // 如果剛才是拖動模式，直接解鎖並結束
-        if (activeGestureMode === 'dragging') {
+        // 進度調整或亮度/音量調整結束
+        if (
+          activeGestureMode === 'seeking' ||
+          activeGestureMode === 'adjusting'
+        ) {
           activeGestureMode = 'none';
-          lastTapTime = 0; // 鎖死點擊
+          lastTapTime = 0;
           return;
         }
 
-        // --- 點擊 / 雙擊 Seek 邏輯 (只有在 activeGestureMode === 'none' 時執行) ---
+        // 雙擊檢測（只在快速點擊時觸發）
         const touch = e.changedTouches[0];
-        const rect = $view.getBoundingClientRect();
+        const rect = $video.getBoundingClientRect();
         const x = touch.clientX - rect.left;
         const xPercent = x / rect.width;
         const now = Date.now();
@@ -547,20 +572,22 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             }
           }
         }
+
+        activeGestureMode = 'none';
       };
 
-      $view.addEventListener('touchstart', handleTouchStart, {
+      $video.addEventListener('touchstart', handleTouchStart, {
         passive: false,
       });
-      $view.addEventListener('touchmove', handleTouchMove, { passive: false });
-      $view.addEventListener('touchend', handleTouchEnd, { passive: false });
+      $video.addEventListener('touchmove', handleTouchMove, { passive: false });
+      $video.addEventListener('touchend', handleTouchEnd, { passive: false });
 
       if (getInstance) getInstance(art);
 
       return () => {
-        $view.removeEventListener('touchstart', handleTouchStart);
-        $view.removeEventListener('touchmove', handleTouchMove);
-        $view.removeEventListener('touchend', handleTouchEnd);
+        $video.removeEventListener('touchstart', handleTouchStart);
+        $video.removeEventListener('touchmove', handleTouchMove);
+        $video.removeEventListener('touchend', handleTouchEnd);
         if (art && art.destroy) {
           if (art.video && (art.video as any).hls) {
             (art.video as any).hls.destroy();
