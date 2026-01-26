@@ -2115,25 +2115,25 @@ function PlayPageClient() {
                       </svg>
                     </button>
 
-                    {/* 播放速度按鈕 */}
-                    <button
-                      onClick={() => {
-                        // 循環切換速度: 1x -> 1.5x -> 2x -> 1x
-                        const speeds = [1, 1.5, 2];
-                        const currentIndex = speeds.indexOf(
-                          lastPlaybackRateRef.current
-                        );
-                        const nextSpeed =
-                          speeds[(currentIndex + 1) % speeds.length];
-                        handleSpeedChange(nextSpeed);
-                      }}
-                      className='w-12 h-12 flex items-center justify-center bg-black/70 hover:bg-black/90 backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg'
-                      aria-label='播放速度'
-                    >
-                      <span className='text-white text-sm font-bold'>
-                        {lastPlaybackRateRef.current}x
-                      </span>
-                    </button>
+                    {/* 播放速度按鈕組 */}
+                    {[0.5, 0.75, 1, 1.5, 2, 3].map((speed) => (
+                      <button
+                        key={speed}
+                        onClick={() => {
+                          handleSpeedChange(speed);
+                        }}
+                        className={`w-12 h-12 flex items-center justify-center backdrop-blur-sm rounded-full transition-all duration-200 hover:scale-110 shadow-lg ${
+                          lastPlaybackRateRef.current === speed
+                            ? 'bg-blue-500/80 hover:bg-blue-600/90'
+                            : 'bg-black/70 hover:bg-black/90'
+                        }`}
+                        aria-label={`${speed}x 速度`}
+                      >
+                        <span className='text-white text-xs font-bold'>
+                          {speed}x
+                        </span>
+                      </button>
+                    ))}
 
                     {/* 跳過片頭片尾按鈕 */}
                     <button
