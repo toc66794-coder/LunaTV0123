@@ -276,10 +276,12 @@ function PlayPageClient() {
 
   // 監聽 ArtPlayer 控制欄顯示狀態
   useEffect(() => {
-    if (!artPlayerRef.current || !isFullscreen) return;
+    if (!isFullscreen) {
+      setShowFullscreenControls(false);
+      return;
+    }
 
     const checkControlsVisibility = () => {
-      // ArtPlayer 控制欄顯示時,同步顯示我們的控制欄
       const artControls = document.querySelector('.art-controls');
       if (artControls) {
         const isVisible = !artControls.classList.contains('art-controls-hide');
@@ -287,14 +289,23 @@ function PlayPageClient() {
       }
     };
 
-    // 定期檢查控制欄狀態
-    const interval = setInterval(checkControlsVisibility, 100);
+    // 使用 MutationObserver 監聽 class 變化
+    const artControls = document.querySelector('.art-controls');
+    if (artControls) {
+      const observer = new MutationObserver(checkControlsVisibility);
+      observer.observe(artControls, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
 
-    return () => {
-      clearInterval(interval);
-    };
+      // 初始檢查
+      checkControlsVisibility();
+
+      return () => {
+        observer.disconnect();
+      };
+    }
   }, [isFullscreen]);
-
   // 顯示手勢反饋
   const showGestureIndicator = (
     type: 'volume' | 'brightness' | 'seek-forward' | 'seek-backward',
