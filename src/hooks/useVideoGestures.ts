@@ -19,7 +19,6 @@ interface TouchInfo {
 
 const DOUBLE_TAP_DELAY = 300; // 雙擊間隔時間 (ms)
 const SWIPE_THRESHOLD = 10; // 滑動閾值 (px)
-const SEEK_TIME = 10; // 快進/後退秒數
 
 export const useVideoGestures = ({
   onVolumeChange,

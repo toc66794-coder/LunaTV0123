@@ -56,7 +56,6 @@ export default function VideoPlayer({
     lastVolumeRef.current = lastVolume;
     lastPlaybackRateRef.current = lastPlaybackRate;
 
-    // 如果播放器已存在，嘗試更新自定義控件狀態
     if (artInstanceRef.current && (window as any).refreshCustomControls) {
       (window as any).refreshCustomControls();
     }
@@ -65,26 +64,20 @@ export default function VideoPlayer({
   useEffect(() => {
     if (!artRef.current) return;
 
-    // 定義播放器配置
     const art = new Artplayer({
       ...option,
       container: artRef.current,
       customType: {
         m3u8: async function (video: HTMLVideoElement, url: string) {
-          // 動態導入 Hls.js 以進一步優化分卷大小
           const { default: Hls } = await import('hls.js');
+          if (!Hls) return;
 
-          if (!Hls) {
-            console.error('HLS.js 加載失敗');
-            return;
-          }
           if (video.hls) {
             video.hls.destroy();
           }
 
-          // 如果啟用了去廣告，定義自定義 Loader
           let hlsLoader = Hls.DefaultConfig.loader;
-          if (blockAdEnabled) {
+          if (blockAdEnabledRef.current) {
             class CustomHlsJsLoader extends (Hls.DefaultConfig.loader as any) {
               constructor(config: any) {
                 super(config);
@@ -102,7 +95,6 @@ export default function VideoPlayer({
                       context: any
                     ) {
                       if (response.data && typeof response.data === 'string') {
-                        // 移除廣告分段
                         response.data = response.data
                           .split('\n')
                           .filter(
@@ -130,11 +122,11 @@ export default function VideoPlayer({
             maxBufferSize: 60 * 1000 * 1000,
             loader: hlsLoader,
           });
+
           hls.loadSource(url);
           hls.attachMedia(video);
-          video.hls = hls; // 綁定 hls 實例以便後續銷毀
+          video.hls = hls;
 
-          // 確保 video 標籤有 src (AirPlay)
           if (!video.querySelector('source')) {
             const source = document.createElement('source');
             source.src = url;
@@ -145,7 +137,7 @@ export default function VideoPlayer({
             video.removeAttribute('disableRemotePlayback');
           }
 
-          hls.on(Hls.Events.ERROR, function (event: any, data: any) {
+          hls.on(Hls.Events.ERROR, (event: any, data: any) => {
             if (data.fatal) {
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
@@ -293,7 +285,6 @@ export default function VideoPlayer({
 
     artInstanceRef.current = art;
 
-    // 綁定全局函數供 HTML 字符串內的 onclick 使用
     (window as any).toggleAdBlock = onBlockAdToggle;
     (window as any).startDownload = onStartDownload;
     (window as any).openSettings = onOpenSettings;
@@ -302,7 +293,6 @@ export default function VideoPlayer({
       lastPlaybackRateRef.current = s;
     };
 
-    // 渲染自定義控制按鈕
     const updateCustomControls = () => {
       if (!art) return;
       const $controls = art.template.$container.querySelector(
@@ -310,7 +300,6 @@ export default function VideoPlayer({
       );
       if (!$controls) return;
 
-      // 去廣告按鈕
       const adContainer = $controls.querySelector('#ad-btn-container');
       if (adContainer) {
         const enabled = blockAdEnabledRef.current;
@@ -323,7 +312,6 @@ export default function VideoPlayer({
             `;
       }
 
-      // 速度按鈕
       const speedContainer = $controls.querySelector('#speed-btns-container');
       if (speedContainer) {
         const speeds = [0.5, 1, 1.5, 2, 3];
@@ -340,12 +328,10 @@ export default function VideoPlayer({
           .join('');
       }
 
-      // 下載按鈕
       const downloadContainer = $controls.querySelector(
         '#download-btn-container'
       );
       if (downloadContainer) {
-        // 注意：這裡 url 需要確保是當前播放的 url，如果 option.url 變更，組件會重繪，所以取 option.url 即可
         const task = downloadTasksRef.current[option.url];
         const isDownloading = task?.status === 'downloading';
         const isCompleted = task?.status === 'completed';
@@ -371,7 +357,6 @@ export default function VideoPlayer({
             `;
       }
 
-      // 設定按鈕
       const settingsContainer = $controls.querySelector(
         '#settings-btn-container'
       );
@@ -405,7 +390,7 @@ export default function VideoPlayer({
       artInstanceRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [option.url, blockAdEnabled]); // 當 URL 或 去廣告設定 改變時重新初始化
+  }, [option.url, blockAdEnabled]);
 
   return <div ref={artRef} className={className} style={style} {...rest} />;
 }
