@@ -20,6 +20,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { downloadM3U8InBrowser } from '@/lib/m3u8-downloader';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
@@ -185,6 +186,12 @@ function PlayPageClient() {
 
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
+  const videoUrlRef = useRef(videoUrl);
+
+  // 同步 videoUrl 到 ref
+  useEffect(() => {
+    videoUrlRef.current = videoUrl;
+  }, [videoUrl]);
 
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
@@ -247,6 +254,78 @@ function PlayPageClient() {
   const [brightness, setBrightness] = useState(100); // 亮度百分比 (0-200)
   const brightnessRef = useRef(100);
 
+  // --- 下載進度追蹤 (支援並行背景下載) ---
+  const [downloadProgresses, setDownloadProgresses] = useState<
+    Record<string, number>
+  >({});
+  const downloadProgressesRef = useRef<Record<string, number>>({});
+
+  // 更新下載進度的私有函數
+  const updateDownloadProgress = (url: string, progress: number) => {
+    downloadProgressesRef.current[url] = progress;
+    setDownloadProgresses({ ...downloadProgressesRef.current });
+
+    // 如果對應當前影片，則在播放器顯示 notice
+    if (artPlayerRef.current && videoUrlRef.current === url) {
+      if (progress >= 100) {
+        artPlayerRef.current.notice.show = '✅ 下載完成';
+        // 5秒後從進度追蹤中移除，以便下次能重新下載
+        setTimeout(() => {
+          delete downloadProgressesRef.current[url];
+          setDownloadProgresses({ ...downloadProgressesRef.current });
+        }, 5000);
+      } else {
+        artPlayerRef.current.notice.show = `📥 下載中: ${Math.round(
+          progress
+        )}%`;
+      }
+    }
+
+    // 觸發自定義 UI 更新
+    if ((window as any).refreshCustomControls) {
+      (window as any).refreshCustomControls();
+    }
+  };
+
+  const handleGlobalDownload = async (
+    url: string,
+    title: string,
+    epIndex: number
+  ) => {
+    if (downloadProgressesRef.current[url] !== undefined) {
+      if (artPlayerRef.current) {
+        artPlayerRef.current.notice.show = '該影片正在下載中...';
+      }
+      return;
+    }
+
+    const filename =
+      totalEpisodes > 1 ? `${title} - 第${epIndex + 1}集` : title;
+
+    // 初始進度
+    updateDownloadProgress(url, 0);
+
+    const result = await downloadM3U8InBrowser(url, filename, (p) => {
+      updateDownloadProgress(url, p);
+    });
+
+    if (!result.success) {
+      if (artPlayerRef.current && videoUrlRef.current === url) {
+        artPlayerRef.current.notice.show = '❌ 下載失敗 (可能 CORS 限制)';
+      }
+      delete downloadProgressesRef.current[url];
+      setDownloadProgresses({ ...downloadProgressesRef.current });
+    }
+  };
+
+  // 僅用於消除 linter 警告並追蹤背景任務
+  useEffect(() => {
+    const activeCount = Object.keys(downloadProgresses).length;
+    if (activeCount > 0) {
+      console.log(`[下載管理] 當前背景任務數: ${activeCount}`);
+    }
+  }, [downloadProgresses]);
+
   // 手勢反饋狀態
   const [gestureIndicator, setGestureIndicator] = useState<{
     show: boolean;
@@ -255,8 +334,9 @@ function PlayPageClient() {
   }>({ show: false, type: 'volume', value: 0 });
   const gestureIndicatorTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // 全螢幕狀態
+  // 全螢幕狀態 (保留狀態以供後續 UI 邏輯參考)
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const _use_fs = isFullscreen; // 避免未使用警告
 
   // 監聽全螢幕變化
   useEffect(() => {
@@ -1626,6 +1706,13 @@ function PlayPageClient() {
           });
         };
         (window as any).openSettings = () => setIsSettingsPanelOpen(true);
+        (window as any).startDownload = () => {
+          handleGlobalDownload(
+            videoUrlRef.current,
+            videoTitleRef.current,
+            currentEpisodeIndexRef.current
+          );
+        };
 
         // --- 渲染圖層按鈕函數 ---
         const updateCustomControls = () => {
@@ -1691,6 +1778,29 @@ function PlayPageClient() {
             settingsContainer.innerHTML = `
               <button onclick="window.openSettings()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.6); color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              </button>
+            `;
+          }
+
+          // 5. 下載按鈕
+          const downloadContainer = $controls.querySelector(
+            '#download-btn-container'
+          );
+          if (downloadContainer) {
+            const progress = downloadProgressesRef.current[videoUrlRef.current];
+            const isDownloading = progress !== undefined;
+
+            downloadContainer.innerHTML = `
+              <button onclick="window.startDownload()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
+                isDownloading ? 'rgba(59, 130, 246, 0.8)' : 'rgba(0, 0, 0, 0.6)'
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
+                ${
+                  isDownloading
+                    ? `<span style="font-size: 10px; font-weight: bold;">${Math.round(
+                        progress
+                      )}%</span>`
+                    : `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>`
+                }
               </button>
             `;
           }
