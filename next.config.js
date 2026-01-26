@@ -74,9 +74,7 @@ const withPWA = require('next-pwa')({
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
-  workboxOptions: {
-    maximumFileSizeToCacheInBytes: 5242880, // 5MB
-  },
+  maximumFileSizeToCacheInBytes: 5242880, // 將此選項移至外部
 });
 
 module.exports = withPWA(nextConfig);
