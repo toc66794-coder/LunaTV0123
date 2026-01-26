@@ -106,11 +106,16 @@ export const useVideoGestures = ({
         }
       }
 
-      // 如果長按已啟動，鎖定音量/亮度
+      // 如果長按已啟動，鎖定音量/亮度，禁止其他操作
       if (state.current.isLongPressActive) return;
 
       // 判斷是否應該觸發拖動
       if (!state.current.hasTriggeredDragging) {
+        // 如果水平移動太明顯，判定為非音量/亮度操作 (例如使用者想捲動或只是帶過)
+        if (deltaX > 100) {
+          return;
+        }
+
         if (deltaYFromStart > DRAG_START_THRESHOLD) {
           state.current.hasTriggeredDragging = true;
           // 關鍵點：觸發瞬間將 lastY 設為當前位置，防止數值突跳

@@ -411,48 +411,71 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [option.url, blockAdEnabled]);
 
-    const handlersRef = useRef(rest);
+    const handlersRef = useRef({
+      onTouchStart: rest.onTouchStart,
+      onTouchMove: rest.onTouchMove,
+      onTouchEnd: rest.onTouchEnd,
+      onContextMenu: rest.onContextMenu,
+    });
+
     useEffect(() => {
-      handlersRef.current = rest;
-    }, [rest]);
+      handlersRef.current = {
+        onTouchStart: rest.onTouchStart,
+        onTouchMove: rest.onTouchMove,
+        onTouchEnd: rest.onTouchEnd,
+        onContextMenu: rest.onContextMenu,
+      };
+    }, [
+      rest.onTouchStart,
+      rest.onTouchMove,
+      rest.onTouchEnd,
+      rest.onContextMenu,
+    ]);
 
     useEffect(() => {
       const container = artRef.current;
       if (!container) return;
 
-      // 不再使用 capture: true，讓事件能正常冒泡回 ArtPlayer
-      const onTouchStart = (e: TouchEvent) => {
+      const onTouchStartLocal = (e: TouchEvent) => {
         handlersRef.current.onTouchStart?.(e as any);
       };
-      const onTouchMove = (e: TouchEvent) => {
+      const onTouchMoveLocal = (e: TouchEvent) => {
         handlersRef.current.onTouchMove?.(e as any);
       };
-      const onTouchEnd = (e: TouchEvent) => {
+      const onTouchEndLocal = (e: TouchEvent) => {
         handlersRef.current.onTouchEnd?.(e as any);
       };
-      const onContextMenu = (e: MouseEvent) => {
+      const onContextMenuLocal = (e: MouseEvent) => {
         handlersRef.current.onContextMenu?.(e as any);
       };
 
-      // 使用原生監聽主要是為了 { passive: false } 支援 preventDefault
-      container.addEventListener('touchstart', onTouchStart, {
+      container.addEventListener('touchstart', onTouchStartLocal, {
         passive: false,
       });
-      container.addEventListener('touchmove', onTouchMove, {
+      container.addEventListener('touchmove', onTouchMoveLocal, {
         passive: false,
       });
-      container.addEventListener('touchend', onTouchEnd, {
+      container.addEventListener('touchend', onTouchEndLocal, {
         passive: false,
       });
-      container.addEventListener('contextmenu', onContextMenu);
+      container.addEventListener('contextmenu', onContextMenuLocal);
 
       return () => {
-        container.removeEventListener('touchstart', onTouchStart);
-        container.removeEventListener('touchmove', onTouchMove);
-        container.removeEventListener('touchend', onTouchEnd);
-        container.removeEventListener('contextmenu', onContextMenu);
+        container.removeEventListener('touchstart', onTouchStartLocal);
+        container.removeEventListener('touchmove', onTouchMoveLocal);
+        container.removeEventListener('touchend', onTouchEndLocal);
+        container.removeEventListener('contextmenu', onContextMenuLocal);
       };
     }, []);
+
+    // 從 rest 中排除已經手動綁定的 event handlers
+    const {
+      onTouchStart: _ts,
+      onTouchMove: _tm,
+      onTouchEnd: _te,
+      onContextMenu: _cm,
+      ...divProps
+    } = rest as any;
 
     return (
       <div
@@ -465,7 +488,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           WebkitTouchCallout: 'none',
           touchAction: 'none',
         }}
-        {...rest}
+        {...divProps}
       />
     );
   }
