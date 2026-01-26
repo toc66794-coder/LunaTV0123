@@ -10,7 +10,6 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 
 import {
   deleteFavorite,
-  deletePlayRecord,
   deleteSkipConfig,
   generateStorageKey,
   getAllPlayRecords,
@@ -938,7 +937,7 @@ function PlayPageClient() {
     };
 
     initFromHistory();
-  }, []);
+  }, [currentSource, currentId]); // 加入依賴項，確保 ID 準備好後才加載紀錄
 
   // 跳过片头片尾配置处理
   useEffect(() => {
@@ -974,31 +973,8 @@ function PlayPageClient() {
       const currentPlayTime = artPlayerRef.current?.currentTime || 0;
       console.log('换源前当前播放时间:', currentPlayTime);
 
-      // 清除前一个历史记录
-      if (currentSourceRef.current && currentIdRef.current) {
-        try {
-          await deletePlayRecord(
-            currentSourceRef.current,
-            currentIdRef.current
-          );
-          console.log('已清除前一个播放记录');
-        } catch (err) {
-          console.error('清除播放记录失败:', err);
-        }
-      }
-
-      // 清除并设置下一个跳过片头片尾配置
-      if (currentSourceRef.current && currentIdRef.current) {
-        try {
-          await deleteSkipConfig(
-            currentSourceRef.current,
-            currentIdRef.current
-          );
-          await saveSkipConfig(newSource, newId, skipConfigRef.current);
-        } catch (err) {
-          console.error('清除跳过片头片尾配置失败:', err);
-        }
-      }
+      // --- 移除：換源時不需要刪除歷史紀錄與跳過配置 ---
+      // 舊邏輯會導致換源後舊紀錄消失，這是不正確的。
 
       const newDetail = availableSources.find(
         (source) => source.source === newSource && source.id === newId

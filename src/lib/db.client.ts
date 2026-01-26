@@ -356,7 +356,7 @@ class HybridCacheManager {
   }
 
   /**
-   * 清除所有过期缓存
+   * 清除所有過期緩存 - 修正邏輯：僅在版本不符或損壞時刪除，正常過期由後台刷新處理
    */
   clearExpiredCaches(): void {
     if (typeof window === 'undefined') return;
@@ -368,20 +368,25 @@ class HybridCacheManager {
         const key = localStorage.key(i);
         if (key?.startsWith(CACHE_PREFIX)) {
           try {
-            const cache = JSON.parse(localStorage.getItem(key) || '{}');
-            // 检查是否有任何缓存数据过期
-            let hasValidData = false;
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const cache = JSON.parse(raw);
+
+            // 檢查版本。版本不符則清除，確保資料結構一致
+            // 正常的 timestamp 過期不再此直接刪除全量資料，而是交由背景刷新
+            let isVersionMismatch = false;
             for (const [, cacheData] of Object.entries(cache)) {
-              if (cacheData && this.isCacheValid(cacheData as CacheData<any>)) {
-                hasValidData = true;
+              if (cacheData && (cacheData as any).version !== CACHE_VERSION) {
+                isVersionMismatch = true;
                 break;
               }
             }
-            if (!hasValidData) {
+
+            if (isVersionMismatch) {
               keysToRemove.push(key);
             }
           } catch {
-            // 解析失败的缓存也删除
+            // 解析失敗的緩存也刪除
             keysToRemove.push(key);
           }
         }
@@ -389,7 +394,7 @@ class HybridCacheManager {
 
       keysToRemove.forEach((key) => localStorage.removeItem(key));
     } catch (error) {
-      console.warn('清除过期缓存失败:', error);
+      console.warn('清理過期緩存失敗:', error);
     }
   }
 }
