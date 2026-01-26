@@ -2138,7 +2138,7 @@ function PlayPageClient() {
                     {/* 跳過片頭片尾按鈕 */}
                     <button
                       onClick={() => {
-                        onSkipConfigChange({
+                        handleSkipConfigChange({
                           ...skipConfig,
                           enable: !skipConfig.enable,
                         });
