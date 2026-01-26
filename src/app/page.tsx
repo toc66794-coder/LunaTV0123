@@ -70,7 +70,7 @@ function HomeClient() {
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
 
   // 批量檢查快取狀態
-  const checkBatchCache = async (items: DoubanItem[]) => {
+  const checkBatchCache = async (items: any[]) => {
     if (items.length === 0) return;
     try {
       const res = await fetch('/api/admin/cache', {
