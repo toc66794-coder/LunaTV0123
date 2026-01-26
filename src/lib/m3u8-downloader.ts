@@ -129,14 +129,16 @@ export async function downloadM3U8InBrowser(
       offset += b.byteLength;
     }
 
-    // 5. 觸發下載 (對於 TS 流，有些播放器更喜歡 .mp4 擴展名來嘗試播放)
-    // 雖然技術上是 MPEG-TS，但為了移動端和大部分播放器兼容，我們提示為 .mp4
-    const blob = new Blob([merged], { type: 'video/mp2t' });
+    // 5. 觸發下載 (雖然技術上是 MPEG-TS，但我們強制標記為 .mp4 增加兼容性)
+    const blob = new Blob([merged], { type: 'video/mp4' });
     const downloadUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = downloadUrl;
-    // 使用 .mp4 擴展名以增加文件系統和普通播放器的兼容性
-    a.download = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+
+    // 移除檔名中可能存在的舊後綴，並強制添加 .mp4
+    const cleanFilename = filename.replace(/\.(ts|mp4|mkv|mov|avi|wmv)$/i, '');
+    a.download = `${cleanFilename}.mp4`;
+
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -12,6 +12,7 @@ import {
   Search,
   Star,
   Tv,
+  Download,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -25,6 +26,7 @@ import {
 } from 'react';
 
 import { useSite } from './SiteProvider';
+import { useDownload } from './DownloadProvider';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -129,6 +131,8 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
   const handleSearchClick = useCallback(() => {
     router.push('/search');
   }, [router]);
+
+  const { activeCount } = useDownload();
 
   const contextValue = {
     isCollapsed,
@@ -249,6 +253,32 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 {!isCollapsed && (
                   <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
                     搜索
+                  </span>
+                )}
+              </Link>
+              <Link
+                href='/downloads'
+                onClick={() => setActive('/downloads')}
+                data-active={active === '/downloads'}
+                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 font-medium transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-green-400 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400 ${
+                  isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
+                } gap-3 justify-start relative`}
+              >
+                <div className='w-4 h-4 flex items-center justify-center font-bold'>
+                  <Download className='h-4 w-4 text-gray-500 group-hover:text-green-600 data-[active=true]:text-green-700 dark:text-gray-400 dark:group-hover:text-green-400 dark:data-[active=true]:text-green-400' />
+                </div>
+                {!isCollapsed && (
+                  <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
+                    下载管理
+                  </span>
+                )}
+                {activeCount > 0 && (
+                  <span
+                    className={`absolute ${
+                      isCollapsed ? 'top-1 right-2' : 'right-4'
+                    } flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-gray-900`}
+                  >
+                    {activeCount}
                   </span>
                 )}
               </Link>

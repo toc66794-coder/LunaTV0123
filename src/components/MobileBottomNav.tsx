@@ -2,10 +2,21 @@
 
 'use client';
 
-import { Cat, Clover, Film, Home, Radio, Star, Tv } from 'lucide-react';
+import {
+  Cat,
+  Clover,
+  Download,
+
+  Film,
+  Home,
+  Radio,
+  Star,
+  Tv,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useDownload } from './DownloadProvider';
 
 interface MobileBottomNavProps {
   /**
@@ -20,8 +31,11 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   // 当前激活路径：优先使用传入的 activePath，否则回退到浏览器地址
   const currentActive = activePath ?? pathname;
 
+  const { activeCount } = useDownload();
+
   const [navItems, setNavItems] = useState([
     { icon: Home, label: '首页', href: '/' },
+    { icon: Download, label: '下载', href: '/downloads' },
     {
       icon: Film,
       label: '电影',
@@ -93,9 +107,14 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
           return (
             <li
               key={item.href}
-              className='flex-shrink-0'
+              className='flex-shrink-0 relative'
               style={{ width: '20vw', minWidth: '20vw' }}
             >
+              {item.href === '/downloads' && activeCount > 0 && (
+                <span className='absolute top-2 right-4 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-gray-900 z-10'>
+                  {activeCount}
+                </span>
+              )}
               <Link
                 href={item.href}
                 className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'

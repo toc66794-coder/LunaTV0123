@@ -20,12 +20,12 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { downloadM3U8InBrowser } from '@/lib/m3u8-downloader';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 import { useLongPress } from '@/hooks/useLongPress';
 import { useVideoGestures } from '@/hooks/useVideoGestures';
 
+import { useDownload } from '@/components/DownloadProvider';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 import SettingsPanel from '@/components/SettingsPanel';
@@ -254,77 +254,18 @@ function PlayPageClient() {
   const [brightness, setBrightness] = useState(100); // 亮度百分比 (0-200)
   const brightnessRef = useRef(100);
 
-  // --- 下載進度追蹤 (支援並行背景下載) ---
-  const [downloadProgresses, setDownloadProgresses] = useState<
-    Record<string, number>
-  >({});
-  const downloadProgressesRef = useRef<Record<string, number>>({});
+  // --- 全域下載管理整合 ---
+  const { tasks, addDownloadTask } = useDownload();
+  const downloadTasksRef = useRef(tasks);
 
-  // 更新下載進度的私有函數
-  const updateDownloadProgress = (url: string, progress: number) => {
-    downloadProgressesRef.current[url] = progress;
-    setDownloadProgresses({ ...downloadProgressesRef.current });
-
-    // 如果對應當前影片，則在播放器顯示 notice
-    if (artPlayerRef.current && videoUrlRef.current === url) {
-      if (progress >= 100) {
-        artPlayerRef.current.notice.show = '✅ 下載完成';
-        // 5秒後從進度追蹤中移除，以便下次能重新下載
-        setTimeout(() => {
-          delete downloadProgressesRef.current[url];
-          setDownloadProgresses({ ...downloadProgressesRef.current });
-        }, 5000);
-      } else {
-        artPlayerRef.current.notice.show = `📥 下載中: ${Math.round(
-          progress
-        )}%`;
-      }
-    }
-
+  // 同步任務狀態到 ref，供 ArtPlayer 原生渲染使用
+  useEffect(() => {
+    downloadTasksRef.current = tasks;
     // 觸發自定義 UI 更新
     if ((window as any).refreshCustomControls) {
       (window as any).refreshCustomControls();
     }
-  };
-
-  const handleGlobalDownload = async (
-    url: string,
-    title: string,
-    epIndex: number
-  ) => {
-    if (downloadProgressesRef.current[url] !== undefined) {
-      if (artPlayerRef.current) {
-        artPlayerRef.current.notice.show = '該影片正在下載中...';
-      }
-      return;
-    }
-
-    const filename =
-      totalEpisodes > 1 ? `${title} - 第${epIndex + 1}集` : title;
-
-    // 初始進度
-    updateDownloadProgress(url, 0);
-
-    const result = await downloadM3U8InBrowser(url, filename, (p) => {
-      updateDownloadProgress(url, p);
-    });
-
-    if (!result.success) {
-      if (artPlayerRef.current && videoUrlRef.current === url) {
-        artPlayerRef.current.notice.show = '❌ 下載失敗 (可能 CORS 限制)';
-      }
-      delete downloadProgressesRef.current[url];
-      setDownloadProgresses({ ...downloadProgressesRef.current });
-    }
-  };
-
-  // 僅用於消除 linter 警告並追蹤背景任務
-  useEffect(() => {
-    const activeCount = Object.keys(downloadProgresses).length;
-    if (activeCount > 0) {
-      console.log(`[下載管理] 當前背景任務數: ${activeCount}`);
-    }
-  }, [downloadProgresses]);
+  }, [tasks]);
 
   // 手勢反饋狀態
   const [gestureIndicator, setGestureIndicator] = useState<{
@@ -1707,11 +1648,14 @@ function PlayPageClient() {
         };
         (window as any).openSettings = () => setIsSettingsPanelOpen(true);
         (window as any).startDownload = () => {
-          handleGlobalDownload(
+          addDownloadTask(
             videoUrlRef.current,
             videoTitleRef.current,
             currentEpisodeIndexRef.current
           );
+          if (artPlayerRef.current) {
+            artPlayerRef.current.notice.show = '📥 已加入下載隊列';
+          }
         };
 
         // --- 渲染圖層按鈕函數 ---
@@ -1787,18 +1731,25 @@ function PlayPageClient() {
             '#download-btn-container'
           );
           if (downloadContainer) {
-            const progress = downloadProgressesRef.current[videoUrlRef.current];
-            const isDownloading = progress !== undefined;
+            const task = downloadTasksRef.current[videoUrlRef.current];
+            const isDownloading = task?.status === 'downloading';
+            const isCompleted = task?.status === 'completed';
 
             downloadContainer.innerHTML = `
               <button onclick="window.startDownload()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
-                isDownloading ? 'rgba(59, 130, 246, 0.8)' : 'rgba(0, 0, 0, 0.6)'
+                isDownloading
+                  ? 'rgba(59, 130, 246, 0.8)'
+                  : isCompleted
+                  ? 'rgba(34, 197, 94, 0.8)'
+                  : 'rgba(0, 0, 0, 0.6)'
               }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
                 ${
                   isDownloading
                     ? `<span style="font-size: 10px; font-weight: bold;">${Math.round(
-                        progress
+                        task.progress
                       )}%</span>`
+                    : isCompleted
+                    ? `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`
                     : `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>`
                 }
               </button>
