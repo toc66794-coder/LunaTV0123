@@ -2086,7 +2086,7 @@ function PlayPageClient() {
 
                 {/* 全螢幕控制欄 */}
                 {isFullscreen && showFullscreenControls && (
-                  <div className='absolute top-4 right-4 z-[600] flex gap-2 animate-fade-in'>
+                  <div className='absolute top-4 right-4 z-[9999] flex gap-2 animate-fade-in'>
                     {/* 去廣告按鈕 */}
                     <button
                       onClick={() => {
