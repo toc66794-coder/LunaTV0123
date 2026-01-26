@@ -67,7 +67,13 @@ export const useVideoGestures = ({
       // 啟動長按定時器
       if (longPressTimer.current) clearTimeout(longPressTimer.current);
       longPressTimer.current = setTimeout(() => {
-        if (state.current && !state.current.hasMovedSignificantlyForLongPress) {
+        // 增加 !state.current.hasTriggeredDragging 判定：
+        // 如果使用者已經開始拉動音量/亮度，則不再觸發長按加速
+        if (
+          state.current &&
+          !state.current.hasMovedSignificantlyForLongPress &&
+          !state.current.hasTriggeredDragging
+        ) {
           state.current.isLongPressActive = true;
           if (onLongPressStart) onLongPressStart();
           if (isTouch && navigator.vibrate) navigator.vibrate(50);
@@ -119,8 +125,9 @@ export const useVideoGestures = ({
       if (state.current.isLeft) {
         if (onBrightnessChange) onBrightnessChange(yChange);
       } else {
-        const xPercentFromStart = state.current.startX / rect.width;
-        if (xPercentFromStart > 0.75) {
+        const xPercent = currentX / rect.width;
+        // 如果起點就在右側 1/4，或是滑動過程中保持在右側
+        if (state.current.startX / rect.width > 0.75 || xPercent > 0.75) {
           if (onVolumeChange) onVolumeChange(yChange);
         }
       }
