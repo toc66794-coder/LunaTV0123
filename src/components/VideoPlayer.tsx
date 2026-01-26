@@ -412,12 +412,12 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       let lastTapTime = 0;
       let lastTapSide: 'left' | 'right' | null = null;
 
-      const $video = art.template.$video;
-      if (!$video) return;
+      const $container = art.template.$container;
+      if (!$container) return;
 
       const handleTouchStart = (e: TouchEvent) => {
         const touch = e.touches[0];
-        const rect = $video.getBoundingClientRect();
+        const rect = $container.getBoundingClientRect();
         startX = touch.clientX - rect.left;
         startY = touch.clientY - rect.top;
         startTime = Date.now();
@@ -438,7 +438,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       const handleTouchMove = (e: TouchEvent) => {
         const touch = e.touches[0];
-        const rect = $video.getBoundingClientRect();
+        const rect = $container.getBoundingClientRect();
         const currentX = touch.clientX - rect.left;
         const currentY = touch.clientY - rect.top;
 
@@ -464,8 +464,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           longPressTimer = null;
         }
 
-        // 判斷移動方向（需要達到最小閾值才判定）
-        const minMoveThreshold = 15;
+        // 判斷移動方向（降低最小閾值）
+        const minMoveThreshold = 10;
         if (deltaX < minMoveThreshold && deltaY < minMoveThreshold) {
           return; // 移動太小，不處理
         }
@@ -481,10 +481,12 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
         // 垂直移動佔優：自定義亮度/音量調整
         if (deltaY > deltaX && deltaY > minMoveThreshold) {
+          // 首次進入調整模式
           if (activeGestureMode === 'none') {
             activeGestureMode = 'adjusting';
           }
 
+          // 執行調整邏輯
           if (activeGestureMode === 'adjusting') {
             if (e.cancelable) e.preventDefault();
 
@@ -493,7 +495,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
             if (xPercent < 0.3) {
               // 左側：亮度調整
-              const change = yChange * 0.5;
+              const change = yChange * 0.8;
               if (art.video) {
                 const current =
                   art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
@@ -507,7 +509,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               }
             } else if (xPercent > 0.7) {
               // 右側：音量調整
-              const volumeChange = yChange * 0.003;
+              const volumeChange = yChange * 0.005;
               const newVolume = Math.max(
                 0,
                 Math.min(1, art.volume + volumeChange)
@@ -545,7 +547,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
         // 雙擊檢測（只在快速點擊時觸發）
         const touch = e.changedTouches[0];
-        const rect = $video.getBoundingClientRect();
+        const rect = $container.getBoundingClientRect();
         const x = touch.clientX - rect.left;
         const xPercent = x / rect.width;
         const now = Date.now();
@@ -566,6 +568,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
                 art.notice.show = '⏩ 快進 10 秒';
               }
               lastTapTime = 0;
+              lastTapSide = null;
             } else {
               lastTapTime = now;
               lastTapSide = side;
@@ -576,18 +579,22 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         activeGestureMode = 'none';
       };
 
-      $video.addEventListener('touchstart', handleTouchStart, {
+      $container.addEventListener('touchstart', handleTouchStart, {
         passive: false,
       });
-      $video.addEventListener('touchmove', handleTouchMove, { passive: false });
-      $video.addEventListener('touchend', handleTouchEnd, { passive: false });
+      $container.addEventListener('touchmove', handleTouchMove, {
+        passive: false,
+      });
+      $container.addEventListener('touchend', handleTouchEnd, {
+        passive: false,
+      });
 
       if (getInstance) getInstance(art);
 
       return () => {
-        $video.removeEventListener('touchstart', handleTouchStart);
-        $video.removeEventListener('touchmove', handleTouchMove);
-        $video.removeEventListener('touchend', handleTouchEnd);
+        $container.removeEventListener('touchstart', handleTouchStart);
+        $container.removeEventListener('touchmove', handleTouchMove);
+        $container.removeEventListener('touchend', handleTouchEnd);
         if (art && art.destroy) {
           if (art.video && (art.video as any).hls) {
             (art.video as any).hls.destroy();
