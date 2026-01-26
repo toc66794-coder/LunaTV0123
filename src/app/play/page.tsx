@@ -2073,13 +2073,17 @@ function PlayPageClient() {
                   </div>
                 )}
 
-                {/* 全螢幕點擊區域 - 點擊切換控制欄 */}
-                {isFullscreen && (
+                {/* 全螢幕點擊區域 - 點擊上方區域切換控制欄 */}
+                {isFullscreen && !showFullscreenControls && (
                   <div
-                    onClick={toggleFullscreenControls}
-                    className='absolute inset-0 z-[550]'
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFullscreenControls();
+                    }}
+                    className='absolute top-0 left-0 right-0 h-1/3 z-[550] cursor-pointer'
                     style={{
-                      pointerEvents: showFullscreenControls ? 'none' : 'auto',
+                      background:
+                        'linear-gradient(to bottom, rgba(0,0,0,0.3), transparent)',
                     }}
                   />
                 )}
