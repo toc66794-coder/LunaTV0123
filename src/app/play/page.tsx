@@ -598,26 +598,6 @@ function PlayPageClient() {
     }
   };
 
-  const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
-    if (!video || !url) return;
-    const sources = Array.from(video.getElementsByTagName('source'));
-    const existed = sources.some((s) => s.src === url);
-    if (!existed) {
-      // 移除旧的 source，保持唯一
-      sources.forEach((s) => s.remove());
-      const sourceEl = document.createElement('source');
-      sourceEl.src = url;
-      video.appendChild(sourceEl);
-    }
-
-    // 始终允许远程播放（AirPlay / Cast）
-    video.disableRemotePlayback = false;
-    // 如果曾经有禁用属性，移除之
-    if (video.hasAttribute('disableRemotePlayback')) {
-      video.removeAttribute('disableRemotePlayback');
-    }
-  };
-
   // 處理播放速度變更
   const handleSpeedChange = (speed: number) => {
     if (artPlayerRef.current) {
@@ -693,26 +673,6 @@ function PlayPageClient() {
     }
   };
 
-  // 去广告相关函数
-  function filterAdsFromM3U8(m3u8Content: string): string {
-    if (!m3u8Content) return '';
-
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 只过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
-      }
-    }
-
-    return filteredLines.join('\n');
-  }
-
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
@@ -756,30 +716,6 @@ function PlayPageClient() {
         .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
   };
-
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-    constructor(config: any) {
-      super(config);
-        ) {
-          const onSuccess = callbacks.onSuccess;
-          callbacks.onSuccess = function (
-            response: any,
-            stats: any,
-            context: any
-          ) {
-            // 如果是m3u8文件，处理内容以移除广告分段
-            if (response.data && typeof response.data === 'string') {
-              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
-            }
-            return onSuccess(response, stats, context, null);
-          };
-        }
-        // 执行原始load方法
-        load(context, config, callbacks);
-      };
-    }
-  }
 
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
@@ -1676,8 +1612,6 @@ function PlayPageClient() {
     });
   };
 
-
-
   // 当组件卸载时清理定时器、Wake Lock 和播放器资源
   useEffect(() => {
     return () => {
@@ -1994,7 +1928,6 @@ function PlayPageClient() {
                   downloadTasks={tasks}
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
-                  lastPlaybackRate={lastPlaybackRateRef.current}
                   onTouchStart={(e: React.TouchEvent) => {
                     onTouchStart(e);
                     videoGestures.onTouchStart(e);
@@ -2012,35 +1945,6 @@ function PlayPageClient() {
                   onMouseMove={onMouseMove}
                   onMouseLeave={onMouseLeave}
                 />
-
-                {/* 隱形圖層用於捕獲手勢 (覆蓋在 VideoPlayer 上方) */}
-                <div
-                  className='absolute inset-0 z-[5] pointer-events-none'
-                  onTouchStart={(e) => {
-                    // 只需確保 pointer-events-none 不會阻擋 VideoPlayer 內部控制
-                    // 但我們需要手勢監聽，所以這裡用一個透明層單獨監聽？
-                    // Artplayer 內部已經有事件監聽，如果我們在 ArtPlayer 容器上監聽，會起衝突嗎？
-                    // 根據之前的代碼，事件是綁定在 artRef 的 div 上的。
-                    // VideoPlayer 渲染的 div ref={artRef} 會自動處理這些嗎？
-                    // 不會，VideoPlayer 內部的 div 是 Artplayer 的容器。
-                    // 這裡我們需要在 VideoPlayer 上層包裹一個 div 來處理手勢，或者將手勢 props 傳給 VideoPlayer。
-                    // 為了簡化，我們可以在這裡創建一個與 VideoPlayer 同級的透明遮罩層來處理手勢事件（如果 Artplayer 允許點擊穿透或我們只監聽特定區域）
-                    // 更好的方式：VideoPlayer 接受 className 和 style，我們其實已經把手勢事件處理從 div 移除了。
-                    // 讓我們把手勢監聽加回到 VideoPlayer 的外層容器，或者通過 props 傳遞 ref？
-                    // 之前的代碼是直接在 div 上綁定 onTouch...
-                    // VideoPlayer 內部返回 div ref={artRef} {...props} 嗎？
-                    // VideoPlayer 目前只接受 style/className。
-                    // 考慮到手勢邏輯比較複雜且是 hook，我們可以在這層用一個 div 包裹 VideoPlayer，或者在 VideoPlayer 內部轉發事件。
-                    // 但 ArtPlayer 會佔滿容器。
-                    // 讓我們嘗試在 VideoPlayer 外面包裹一層 div 用於手勢，並確保 touch-action 設置正確
-                  }}
-                ></div>
-                {/* 恢復手勢綁定：將手勢事件綁定到 VideoPlayer 外層容器的一種方式是將其傳入 props，但 VideoPlayer 只有 className/style。
-                    最簡單的方法：在 VideoPlayer 上面蓋一層透明 div，專門接收 touch 事件，但這會擋住播放器控制欄。
-                    Artplayer 插件模式？
-                    回頭看原代碼：事件是綁定在 div 上的。VideoPlayer 也是返回一個 div。
-                    我們可以在 VideoPlayer 外部包一個 div，把事件綁定在這個 div 上。
-                */}
 
                 {/* 手勢反饋指示器 */}
                 {gestureIndicator.show && (
@@ -2344,7 +2248,7 @@ const FavoriteIcon = ({ filled }: { filled: boolean }) => {
 
 export default function PlayPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense>
       <PlayPageClient />
     </Suspense>
   );
