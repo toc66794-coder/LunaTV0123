@@ -2069,22 +2069,7 @@ function PlayPageClient() {
                   </div>
                 )}
 
-                {/* 全螢幕點擊區域 - 點擊上方區域切換控制欄 */}
-                {isFullscreen && !showFullscreenControls && (
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFullscreenControls();
-                    }}
-                    className='absolute top-0 left-0 right-0 h-1/3 z-[550] cursor-pointer'
-                    style={{
-                      background:
-                        'linear-gradient(to bottom, rgba(0,0,0,0.3), transparent)',
-                    }}
-                  />
-                )}
-
-                {/* 全螢幕控制欄 */}
+                {/* 全螢幕控制欄 - 與 ArtPlayer 控制欄同步顯示 */}
                 {isFullscreen && showFullscreenControls && (
                   <div className='absolute top-4 right-4 z-[9999] flex gap-2 animate-fade-in'>
                     {/* 去廣告按鈕 */}
