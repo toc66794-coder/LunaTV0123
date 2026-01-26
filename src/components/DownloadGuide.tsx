@@ -114,9 +114,13 @@ export default function DownloadGuide({
             </code>
           </div>
 
-          <div className='bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded'>
+          <div className='bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded space-y-2'>
             <p className='text-xs text-yellow-800 dark:text-yellow-200'>
               💡 提示: 使用專業工具下載更穩定,支持斷點續傳和多線程下載
+            </p>
+            <p className='text-xs text-yellow-800 dark:text-yellow-200 font-semibold'>
+              ⚠️ 重要: 請使用上方完整命令(包含 --saveName 參數),否則檔名會是 URL
+              中的檔名而非中文片名
             </p>
           </div>
         </div>
