@@ -22,7 +22,6 @@ import {
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 import { preferBestSource } from '@/lib/video-logic';
-import { useVideoGestures } from '@/hooks/useVideoGestures';
 
 import { useDownload } from '@/components/DownloadProvider';
 import EpisodeSelector from '@/components/EpisodeSelector';
@@ -164,9 +163,6 @@ function PlayPageClient() {
     videoYear,
   ]);
 
-  // 保存長按前的播放速度
-  const speedBeforeLongPress = useRef<number>(1.0);
-
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
   const videoUrlRef = useRef(videoUrl);
@@ -233,10 +229,6 @@ function PlayPageClient() {
   // Wake Lock 相关
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
-  // 亮度控制相關
-  const [brightness, setBrightness] = useState(100); // 亮度百分比 (0-200)
-  const brightnessRef = useRef(100);
-
   // --- 全域下載管理整合 ---
   const { tasks, addDownloadTask } = useDownload();
   const downloadTasksRef = useRef(tasks);
@@ -250,13 +242,7 @@ function PlayPageClient() {
     }
   }, [tasks]);
 
-  // 手勢反饋狀態
-  const [gestureIndicator, setGestureIndicator] = useState<{
-    show: boolean;
-    type: 'volume' | 'brightness' | 'seek-forward' | 'seek-backward';
-    value: number | string;
-  }>({ show: false, type: 'volume', value: 0 });
-  const gestureIndicatorTimeout = useRef<NodeJS.Timeout | null>(null);
+  // 全螢幕狀態 (保留狀態以供後續 UI 邏輯參考)
 
   // 全螢幕狀態 (保留狀態以供後續 UI 邏輯參考)
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -273,86 +259,6 @@ function PlayPageClient() {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
-
-  // 顯示手勢反饋
-  const showGestureIndicator = (
-    type: 'volume' | 'brightness' | 'seek-forward' | 'seek-backward',
-    value: number | string
-  ) => {
-    setGestureIndicator({ show: true, type, value });
-
-    if (gestureIndicatorTimeout.current) {
-      clearTimeout(gestureIndicatorTimeout.current);
-    }
-
-    gestureIndicatorTimeout.current = setTimeout(() => {
-      setGestureIndicator({ show: false, type, value: 0 });
-    }, 1000);
-  };
-
-  const videoGestures = useVideoGestures({
-    videoContainerRef: artRef,
-    longPressDelay: 500,
-    isFullscreen: isFullscreen,
-    onLongPressStart: () => {
-      console.log('[Gestures] onLongPressStart triggered');
-      if (artPlayerRef.current) {
-        speedBeforeLongPress.current = artPlayerRef.current.playbackRate;
-        artPlayerRef.current.playbackRate = 3;
-        artPlayerRef.current.notice.show = '3x 速播放中';
-        // 同時關閉其他手勢指示器，避免干擾
-        setGestureIndicator({ show: false, type: 'volume', value: 0 });
-      } else {
-        console.warn('[Gestures] artPlayerRef.current is null on long press');
-      }
-    },
-    onLongPressEnd: () => {
-      if (artPlayerRef.current) {
-        artPlayerRef.current.playbackRate = speedBeforeLongPress.current;
-        artPlayerRef.current.notice.show = '';
-      }
-    },
-    onVolumeChange: (delta: number) => {
-      if (!artPlayerRef.current) return;
-      const volumeChange = delta * 0.005;
-      const newVolume = Math.max(
-        0,
-        Math.min(1, artPlayerRef.current.volume + volumeChange)
-      );
-      artPlayerRef.current.volume = newVolume;
-      showGestureIndicator('volume', Math.round(newVolume * 100));
-    },
-    onBrightnessChange: (delta: number) => {
-      const brightnessChange = delta * 0.5;
-      const newBrightness = Math.max(
-        0,
-        Math.min(200, brightnessRef.current + brightnessChange)
-      );
-      brightnessRef.current = newBrightness;
-      setBrightness(newBrightness);
-      if (artPlayerRef.current?.video) {
-        artPlayerRef.current.video.style.filter = `brightness(${newBrightness}%)`;
-      }
-      showGestureIndicator('brightness', Math.round(newBrightness));
-    },
-    onSeekBackward: () => {
-      if (!artPlayerRef.current) return;
-      const newTime = Math.max(0, artPlayerRef.current.currentTime - 10);
-      artPlayerRef.current.currentTime = newTime;
-      artPlayerRef.current.notice.show = '◀◀ 後退 10 秒';
-      showGestureIndicator('seek-backward', '-10s');
-    },
-    onSeekForward: () => {
-      if (!artPlayerRef.current) return;
-      const newTime = Math.min(
-        artPlayerRef.current.duration,
-        artPlayerRef.current.currentTime + 10
-      );
-      artPlayerRef.current.currentTime = newTime;
-      artPlayerRef.current.notice.show = '快進 10 秒 ▶▶';
-      showGestureIndicator('seek-forward', '+10s');
-    },
-  });
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -1672,8 +1578,6 @@ function PlayPageClient() {
                 <VideoPlayer
                   className='w-full h-full rounded-xl overflow-hidden shadow-lg'
                   style={{
-                    filter: `brightness(${brightness}%)`,
-                    transition: 'filter 0.1s ease-out',
                     touchAction: 'none',
                   }}
                   option={{
@@ -1736,101 +1640,8 @@ function PlayPageClient() {
                   downloadTasks={tasks}
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
-                  gestureHandlers={videoGestures as any}
                   ref={artRef}
                 />
-
-                {/* 手勢反饋指示器 */}
-                {gestureIndicator.show && (
-                  <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm text-white px-6 py-4 rounded-2xl shadow-2xl pointer-events-none z-[600] animate-fade-in'>
-                    <div className='flex flex-col items-center gap-2'>
-                      {gestureIndicator.type === 'volume' && (
-                        <>
-                          <svg
-                            className='w-10 h-10'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z'
-                            />
-                          </svg>
-                          <div className='text-2xl font-bold'>
-                            {gestureIndicator.value}%
-                          </div>
-                          <div className='text-sm opacity-75'>音量</div>
-                        </>
-                      )}
-                      {gestureIndicator.type === 'brightness' && (
-                        <>
-                          <svg
-                            className='w-10 h-10'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'
-                            />
-                          </svg>
-                          <div className='text-2xl font-bold'>
-                            {gestureIndicator.value}%
-                          </div>
-                          <div className='text-sm opacity-75'>亮度</div>
-                        </>
-                      )}
-                      {gestureIndicator.type === 'seek-backward' && (
-                        <>
-                          <svg
-                            className='w-10 h-10'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z'
-                            />
-                          </svg>
-                          <div className='text-2xl font-bold'>
-                            {gestureIndicator.value}
-                          </div>
-                          <div className='text-sm opacity-75'>後退</div>
-                        </>
-                      )}
-                      {gestureIndicator.type === 'seek-forward' && (
-                        <>
-                          <svg
-                            className='w-10 h-10'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z'
-                            />
-                          </svg>
-                          <div className='text-2xl font-bold'>
-                            {gestureIndicator.value}
-                          </div>
-                          <div className='text-sm opacity-75'>快進</div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (

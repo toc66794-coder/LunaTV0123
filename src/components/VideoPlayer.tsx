@@ -20,16 +20,6 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   downloadTasks: any;
   lastVolume: number;
   lastPlaybackRate: number;
-  gestureHandlers?: {
-    onTouchStart: (e: TouchEvent) => void;
-    onTouchMove: (e: TouchEvent) => void;
-    onTouchEnd: (e: TouchEvent) => void;
-    onMouseDown: (e: MouseEvent) => void;
-    onMouseMove: (e: MouseEvent) => void;
-    onMouseUp: (e: MouseEvent) => void;
-    onMouseLeave: (e: MouseEvent) => void;
-    onContextMenu: (e: MouseEvent) => void;
-  };
 }
 
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
@@ -49,7 +39,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasks,
       lastVolume,
       lastPlaybackRate,
-      gestureHandlers,
       ...rest
     },
     ref
@@ -408,9 +397,166 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if ($layer) $layer.style.display = state ? 'flex' : 'none';
       });
 
+      // --- 內部手勢與狀態機實作 ---
+      let startX = 0;
+      let startTime = 0;
+      let lastY = 0;
+      let activeGestureMode: 'none' | 'dragging' | 'longpress' = 'none';
+      let longPressTimer: NodeJS.Timeout | null = null;
+      let speedBeforeLongPress = 1;
+      let lastTapTime = 0;
+      let lastTapSide: 'left' | 'right' | null = null;
+
+      const $view = (art.template as any).$view;
+      if (!$view) return;
+
+      const handleTouchStart = (e: TouchEvent) => {
+        const touch = e.touches[0];
+        const rect = $view.getBoundingClientRect();
+        startX = touch.clientX - rect.left;
+        startTime = Date.now();
+        lastY = touch.clientY;
+        activeGestureMode = 'none';
+
+        // 啟動長按計時器 (0.5s)
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+          if (activeGestureMode === 'none') {
+            activeGestureMode = 'longpress';
+            speedBeforeLongPress = art.playbackRate;
+            art.playbackRate = 3;
+            art.notice.show = '🚀 3x 速播放中';
+            if (navigator.vibrate) navigator.vibrate(50);
+          }
+        }, 500);
+      };
+
+      const handleTouchMove = (e: TouchEvent) => {
+        const touch = e.touches[0];
+        const rect = $view.getBoundingClientRect();
+        const currentX = touch.clientX - rect.left;
+
+        const deltaX = Math.abs(currentX - startX);
+
+        // 如果移動明顯，判定長按失效
+        if (deltaX > 150 || Math.abs(touch.clientY - lastY) > 150) {
+          if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        }
+
+        // 進入拖動判定 (音量/亮度)
+        if (
+          activeGestureMode !== 'longpress' &&
+          activeGestureMode !== 'dragging'
+        ) {
+          if (Math.abs(touch.clientY - lastY) > 10) {
+            activeGestureMode = 'dragging';
+            lastY = touch.clientY;
+            if (longPressTimer) clearTimeout(longPressTimer);
+          }
+        }
+
+        // 執行拖動邏輯 (Mutex Lock: 如果是在 longpress 模式，則不執行拖動)
+        if (activeGestureMode === 'dragging') {
+          if (e.cancelable) e.preventDefault();
+          const yChange = lastY - touch.clientY;
+          const xPercent = startX / rect.width;
+
+          if (xPercent < 0.3) {
+            // 左側亮度 (直接改 video filter)
+            // 這裡簡單實現，實際可用內部變數
+            const change = yChange * 0.5;
+            art.notice.show = `亮度調整中...`; // 具體數值邏輯可再精化
+            if (art.video) {
+              const current =
+                art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
+                '100';
+              const next = Math.max(
+                0,
+                Math.min(200, parseInt(current) + change)
+              );
+              art.video.style.filter = `brightness(${next}%)`;
+              art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
+            }
+          } else if (xPercent > 0.7) {
+            // 右側音量
+            const volumeChange = yChange * 0.005;
+            art.volume = Math.max(0, Math.min(1, art.volume + volumeChange));
+            art.notice.show = `🔊 音量: ${Math.round(art.volume * 100)}%`;
+          }
+          lastY = touch.clientY;
+        }
+
+        // 如果在長按模式，強行攔截一切位移，防止觸發瀏覽器行為
+        if (activeGestureMode === 'longpress') {
+          if (e.cancelable) e.preventDefault();
+        }
+      };
+
+      const handleTouchEnd = (e: TouchEvent) => {
+        if (longPressTimer) clearTimeout(longPressTimer);
+
+        // 如果剛才是長按模式，恢復速度
+        if (activeGestureMode === 'longpress') {
+          art.playbackRate = speedBeforeLongPress;
+          art.notice.show = '';
+          activeGestureMode = 'none';
+          lastTapTime = 0; // 鎖死點擊，防止放開時變雙擊
+          return;
+        }
+
+        // 如果剛才是拖動模式，直接解鎖並結束
+        if (activeGestureMode === 'dragging') {
+          activeGestureMode = 'none';
+          lastTapTime = 0; // 鎖死點擊
+          return;
+        }
+
+        // --- 點擊 / 雙擊 Seek 邏輯 (只有在 activeGestureMode === 'none' 時執行) ---
+        const touch = e.changedTouches[0];
+        const rect = $view.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const xPercent = x / rect.width;
+        const now = Date.now();
+
+        if (now - startTime < 250) {
+          let side: 'left' | 'right' | null = null;
+          if (xPercent < 0.25) side = 'left';
+          else if (xPercent > 0.75) side = 'right';
+
+          if (side) {
+            if (now - lastTapTime < 300 && lastTapSide === side) {
+              // 雙擊成功
+              if (side === 'left') {
+                art.seek = Math.max(0, art.currentTime - 10);
+                art.notice.show = '⏪ 後退 10 秒';
+              } else {
+                art.seek = Math.min(art.duration, art.currentTime + 10);
+                art.notice.show = '⏩ 快進 10 秒';
+              }
+              lastTapTime = 0;
+            } else {
+              lastTapTime = now;
+              lastTapSide = side;
+            }
+          }
+        }
+      };
+
+      $view.addEventListener('touchstart', handleTouchStart, {
+        passive: false,
+      });
+      $view.addEventListener('touchmove', handleTouchMove, { passive: false });
+      $view.addEventListener('touchend', handleTouchEnd, { passive: false });
+
       if (getInstance) getInstance(art);
 
       return () => {
+        $view.removeEventListener('touchstart', handleTouchStart);
+        $view.removeEventListener('touchmove', handleTouchMove);
+        $view.removeEventListener('touchend', handleTouchEnd);
         if (art && art.destroy) {
           if (art.video && (art.video as any).hls) {
             (art.video as any).hls.destroy();
@@ -422,42 +568,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [option.url, blockAdEnabled]);
 
-    useEffect(() => {
-      const art = artInstanceRef.current;
-      if (!art || !gestureHandlers) return;
-
-      const $view = (art.template as any).$view;
-      if (!$view) return;
-
-      const onTouchStart = gestureHandlers.onTouchStart;
-      const onTouchMove = gestureHandlers.onTouchMove;
-      const onTouchEnd = gestureHandlers.onTouchEnd;
-      const onMouseDown = gestureHandlers.onMouseDown;
-      const onMouseMove = gestureHandlers.onMouseMove;
-      const onMouseUp = gestureHandlers.onMouseUp;
-      const onMouseLeave = gestureHandlers.onMouseLeave;
-      const onContextMenu = gestureHandlers.onContextMenu;
-
-      $view.addEventListener('touchstart', onTouchStart, { passive: false });
-      $view.addEventListener('touchmove', onTouchMove, { passive: false });
-      $view.addEventListener('touchend', onTouchEnd, { passive: false });
-      $view.addEventListener('mousedown', onMouseDown);
-      $view.addEventListener('mousemove', onMouseMove);
-      $view.addEventListener('mouseup', onMouseUp);
-      $view.addEventListener('mouseleave', onMouseLeave);
-      $view.addEventListener('contextmenu', onContextMenu);
-
-      return () => {
-        $view.removeEventListener('touchstart', onTouchStart);
-        $view.removeEventListener('touchmove', onTouchMove);
-        $view.removeEventListener('touchend', onTouchEnd);
-        $view.removeEventListener('mousedown', onMouseDown);
-        $view.removeEventListener('mousemove', onMouseMove);
-        $view.removeEventListener('mouseup', onMouseUp);
-        $view.removeEventListener('mouseleave', onMouseLeave);
-        $view.removeEventListener('contextmenu', onContextMenu);
-      };
-    }, [gestureHandlers]);
+    // 移除舊的 gestureHandlers useEffect
 
     // 從 rest 中排除已經手動綁定的 event handlers
     const {
