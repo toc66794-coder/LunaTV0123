@@ -293,6 +293,7 @@ function PlayPageClient() {
   const videoGestures = useVideoGestures({
     videoContainerRef: artRef,
     longPressDelay: 500,
+    isFullscreen: isFullscreen,
     onLongPressStart: () => {
       console.log('[Gestures] onLongPressStart triggered');
       if (artPlayerRef.current) {

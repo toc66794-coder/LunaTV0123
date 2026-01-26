@@ -9,6 +9,7 @@ interface UseVideoGesturesOptions {
   onLongPressEnd?: () => void;
   videoContainerRef: React.RefObject<HTMLDivElement | null>;
   longPressDelay?: number;
+  isFullscreen?: boolean;
 }
 
 interface InteractionState {
@@ -36,6 +37,7 @@ export const useVideoGestures = ({
   onLongPressEnd,
   videoContainerRef,
   longPressDelay = 500,
+  isFullscreen = false,
 }: UseVideoGesturesOptions) => {
   const state = useRef<InteractionState | null>(null);
   const lastTapTime = useRef<number>(0);
@@ -51,7 +53,9 @@ export const useVideoGestures = ({
       const y = clientY - rect.top;
       const xPercent = x / rect.width;
 
-      const isLeft = xPercent < 0.25;
+      // 如果是全螢幕，稍微往內縮一點區域判定，避開小米系統回退手勢區域
+      const sideMargin = isFullscreen ? 0.3 : 0.25;
+      const isLeft = xPercent < sideMargin;
 
       state.current = {
         startX: x,
@@ -80,7 +84,7 @@ export const useVideoGestures = ({
         }
       }, longPressDelay);
     },
-    [videoContainerRef, onLongPressStart, longPressDelay]
+    [videoContainerRef, onLongPressStart, longPressDelay, isFullscreen]
   );
 
   const handleMove = useCallback(
@@ -216,10 +220,16 @@ export const useVideoGestures = ({
       onTouchMove: (e: React.TouchEvent | TouchEvent) => {
         const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
 
-        // 關鍵：在手勢區域內，一旦滑動就立即攔截瀏覽器預設行為
-        // 這能解決 Android Chrome 偶爾會把垂直滑動誤判為頁面導航的問題
+        // 如果是全螢幕模式，直接全面攔截觸發權，因為全螢幕下不應有頁面捲動或導航干擾
+        // 如果非全螢幕，則維持現有機制 (偵測到手勢動作才攔截)
         if (event.cancelable) {
-          event.preventDefault();
+          if (
+            isFullscreen ||
+            state.current?.hasTriggeredDragging ||
+            state.current?.isLongPressActive
+          ) {
+            event.preventDefault();
+          }
         }
 
         const touch =
@@ -251,6 +261,6 @@ export const useVideoGestures = ({
         handleEnd(e.clientX, e.clientY);
       },
     }),
-    [handleEnd, handleMove, handleStart]
+    [handleEnd, handleMove, handleStart, isFullscreen]
   );
 };
