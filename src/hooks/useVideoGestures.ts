@@ -142,6 +142,8 @@ export const useVideoGestures = ({
       // 處理長按結束
       if (state.current.isLongPressActive) {
         if (onLongPressEnd) onLongPressEnd();
+        // 關鍵：長按結束後重置雙擊判定，防止長按後的下一次點擊誤判為雙加
+        lastTapTime.current = 0;
         state.current = null;
         return;
       }
@@ -189,27 +191,34 @@ export const useVideoGestures = ({
 
   return {
     onTouchStart: (e: React.TouchEvent) => {
+      e.stopPropagation();
       const touch = e.touches[0];
       handleStart(touch.clientX, touch.clientY, true);
     },
     onTouchMove: (e: React.TouchEvent) => {
+      e.stopPropagation();
       const touch = e.touches[0];
       handleMove(touch.clientX, touch.clientY);
     },
     onTouchEnd: (e: React.TouchEvent) => {
+      e.stopPropagation();
       const touch = e.changedTouches[0];
-      handleEnd(touch.clientX, touch.clientY, true);
+      handleEnd(touch.clientX, touch.clientY);
     },
     onMouseDown: (e: React.MouseEvent) => {
+      e.stopPropagation();
       handleStart(e.clientX, e.clientY);
     },
     onMouseMove: (e: React.MouseEvent) => {
+      e.stopPropagation();
       handleMove(e.clientX, e.clientY);
     },
     onMouseUp: (e: React.MouseEvent) => {
+      e.stopPropagation();
       handleEnd(e.clientX, e.clientY);
     },
     onMouseLeave: (e: React.MouseEvent) => {
+      e.stopPropagation();
       handleEnd(e.clientX, e.clientY);
     },
   };
