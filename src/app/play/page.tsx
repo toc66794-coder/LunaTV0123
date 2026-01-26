@@ -274,37 +274,27 @@ function PlayPageClient() {
   // 全螢幕控制欄顯示狀態 - 與 ArtPlayer 控制欄同步
   const [showFullscreenControls, setShowFullscreenControls] = useState(false);
 
-  // 監聽 ArtPlayer 控制欄顯示狀態
+  // 使用 ArtPlayer 官方事件 API 監聽控制欄顯示狀態
   useEffect(() => {
-    if (!isFullscreen) {
-      setShowFullscreenControls(false);
-      return;
-    }
+    if (!artPlayerRef.current) return;
 
-    const checkControlsVisibility = () => {
-      const artControls = document.querySelector('.art-controls');
-      if (artControls) {
-        const isVisible = !artControls.classList.contains('art-controls-hide');
-        setShowFullscreenControls(isVisible);
+    const handleControlChange = (state: boolean) => {
+      // 只在全螢幕時顯示我們的控制欄
+      if (isFullscreen) {
+        setShowFullscreenControls(state);
+      } else {
+        setShowFullscreenControls(false);
       }
     };
 
-    // 使用 MutationObserver 監聽 class 變化
-    const artControls = document.querySelector('.art-controls');
-    if (artControls) {
-      const observer = new MutationObserver(checkControlsVisibility);
-      observer.observe(artControls, {
-        attributes: true,
-        attributeFilter: ['class'],
-      });
+    // 監聽 ArtPlayer 控制欄顯示/隱藏事件
+    artPlayerRef.current.on('control', handleControlChange);
 
-      // 初始檢查
-      checkControlsVisibility();
-
-      return () => {
-        observer.disconnect();
-      };
-    }
+    return () => {
+      if (artPlayerRef.current) {
+        artPlayerRef.current.off('control', handleControlChange);
+      }
+    };
   }, [isFullscreen]);
   // 顯示手勢反饋
   const showGestureIndicator = (
