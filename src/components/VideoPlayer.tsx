@@ -114,13 +114,17 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
                           response.data &&
                           typeof response.data === 'string'
                         ) {
-                          response.data = response.data
-                            .split('\n')
-                            .filter(
-                              (line: string) =>
-                                !line.includes('#EXT-X-DISCONTINUITY')
-                            )
-                            .join('\n');
+                          try {
+                            response.data = response.data
+                              .split('\n')
+                              .filter(
+                                (line: string) =>
+                                  !line.includes('#EXT-X-DISCONTINUITY')
+                              )
+                              .join('\n');
+                          } catch (e) {
+                            console.warn('Error processing manifest:', e);
+                          }
                         }
                         return onSuccess(response, stats, context, null);
                       };
@@ -564,6 +568,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           art.destroy();
         }
         artInstanceRef.current = null;
+        if (getInstance) getInstance(null);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [option.url, blockAdEnabled]);

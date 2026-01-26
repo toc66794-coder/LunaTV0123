@@ -1065,6 +1065,11 @@ function PlayPageClient() {
 
   // 處理播放器初始化後的回調 (綁定業務邏輯)
   const handlePlayerInit = (art: any) => {
+    if (!art) {
+      artPlayerRef.current = null;
+      return;
+    }
+
     artPlayerRef.current = art;
 
     // 监听播放器事件
@@ -1092,7 +1097,8 @@ function PlayPageClient() {
 
       // --- 渲染圖層按鈕函數 ---
       const updateCustomControls = () => {
-        if (!art) return;
+        // 確保 art 實例仍然存在且包含模板
+        if (!art || !art.template || !art.template.$container) return;
         const $controls = art.template.$container.querySelector(
           '#artplayer-custom-controls'
         );
@@ -1176,11 +1182,12 @@ function PlayPageClient() {
 
       // 監聽控制欄顯示事件，顯示同步圖層
       art.on('control', (state: boolean) => {
+        if (!art || !art.layers) return;
         const $layer = art.layers['custom-controls'];
         if ($layer) $layer.style.display = state ? 'flex' : 'none';
       });
 
-      // 當狀態變化時重新渲染按鈕 (需要一個全域監聽點，或是直接在 ready 監聽播放器事件)
+      // 當狀態變化時重新渲染按鈕
       art.on('video:ratechange', updateCustomControls);
       (window as any).refreshCustomControls = updateCustomControls;
     });
@@ -1293,6 +1300,17 @@ function PlayPageClient() {
 
     art.on('error', (err: any) => {
       console.error('播放器错误:', err);
+      // 顯示錯誤狀態給用戶，避免卡在 loading
+      setIsVideoLoading(false);
+
+      // 可以選擇在這裏設置全局錯誤，或僅僅顯示一個 toast
+      // 如果需要更強烈的錯誤提示，可以使用:
+      // setError('播放發生錯誤，請嘗試切換線路');
+
+      if (art) {
+        art.notice.show = '播放出錯，請嘗試切換線路';
+      }
+
       if (art.currentTime > 0) {
         return;
       }
