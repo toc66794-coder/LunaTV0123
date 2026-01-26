@@ -5,7 +5,10 @@ interface UseVideoGesturesOptions {
   onBrightnessChange?: (delta: number) => void;
   onSeekBackward?: () => void;
   onSeekForward?: () => void;
+  onLongPressStart?: () => void;
+  onLongPressEnd?: () => void;
   videoContainerRef: React.RefObject<HTMLDivElement>;
+  longPressDelay?: number;
 }
 
 interface TouchInfo {
@@ -13,23 +16,30 @@ interface TouchInfo {
   startY: number;
   startTime: number;
   lastY: number;
-  isLeft: boolean; // true = 左側, false = 右側
-  isLongPress: boolean; // 是否為長按
+  isLeft: boolean;
+  isLongPressActive: boolean;
+  hasMovedSignificantly: boolean;
 }
 
-const DOUBLE_TAP_DELAY = 300; // 雙擊間隔時間 (ms)
-const SWIPE_THRESHOLD = 10; // 滑動閾值 (px)
+const DOUBLE_TAP_DELAY = 300;
+const SWIPE_THRESHOLD = 10;
+const MOVE_THRESHOLD = 50; // 用於判定長按是否中斷的靈敏度
+const VERTICAL_DRAG_THRESHOLD = 30; // 手指垂直方向必須拉動超過 30px 才觸發音量/亮度
 
 export const useVideoGestures = ({
   onVolumeChange,
   onBrightnessChange,
   onSeekBackward,
   onSeekForward,
+  onLongPressStart,
+  onLongPressEnd,
   videoContainerRef,
+  longPressDelay = 500,
 }: UseVideoGesturesOptions) => {
   const touchInfo = useRef<TouchInfo | null>(null);
   const lastTapTime = useRef<number>(0);
   const lastTapSide = useRef<'left' | 'right' | null>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
@@ -39,22 +49,16 @@ export const useVideoGestures = ({
       const rect = videoContainerRef.current.getBoundingClientRect();
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
-      const containerWidth = rect.width;
+      const xPercent = x / rect.width;
 
-      // 計算相對位置百分比
-      const xPercent = x / containerWidth;
-
-      // 只在左側 1/4 或右側 1/4 區域觸發手勢
-      // 左側: 0% - 25%, 右側: 75% - 100%
-      // 中間 50% (25% - 75%) 不觸發手勢,避免誤觸
-      let isLeft: boolean | null = null;
+      let isLeft = false;
       if (xPercent < 0.25) {
-        isLeft = true; // 左側 1/4
+        isLeft = true;
       } else if (xPercent > 0.75) {
-        isLeft = false; // 右側 1/4
+        isLeft = false;
       } else {
-        // 中間區域,不處理手勢
-        return;
+        // 中間區域不處理手勢，但仍支援長按（如果需要全畫面長按）
+        // 這裡我們暫定全畫面支援長按，但只有兩側支援滑動
       }
 
       touchInfo.current = {
@@ -63,52 +67,57 @@ export const useVideoGestures = ({
         startTime: Date.now(),
         lastY: y,
         isLeft,
-        isLongPress: false,
+        isLongPressActive: false,
+        hasMovedSignificantly: false,
       };
+
+      // 啟動長按定時器
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = setTimeout(() => {
+        if (touchInfo.current && !touchInfo.current.hasMovedSignificantly) {
+          touchInfo.current.isLongPressActive = true;
+          if (onLongPressStart) onLongPressStart();
+          if (navigator.vibrate) navigator.vibrate(50);
+        }
+      }, longPressDelay);
     },
-    [videoContainerRef]
+    [videoContainerRef, onLongPressStart, longPressDelay]
   );
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
-      if (!touchInfo.current) return;
+      if (!touchInfo.current || !videoContainerRef.current) return;
 
       const touch = e.touches[0];
-      if (!videoContainerRef.current) return;
-
       const rect = videoContainerRef.current.getBoundingClientRect();
-      const currentY = touch.clientY - rect.top;
       const currentX = touch.clientX - rect.left;
-      const deltaY = touchInfo.current.lastY - currentY; // 向上為正,向下為負
+      const currentY = touch.clientY - rect.top;
 
-      // 檢查是否為長按(持續時間超過 500ms)
-      const duration = Date.now() - touchInfo.current.startTime;
-      if (duration > 500) {
-        touchInfo.current.isLongPress = true;
+      const deltaX = Math.abs(currentX - touchInfo.current.startX);
+      const deltaY = Math.abs(currentY - touchInfo.current.startY);
+
+      // 如果移動過大，取消待發送的長按觸發
+      if (deltaX > MOVE_THRESHOLD || deltaY > MOVE_THRESHOLD) {
+        touchInfo.current.hasMovedSignificantly = true;
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
       }
 
-      // 如果是長按,不處理亮度/音量調整
-      if (touchInfo.current.isLongPress) return;
+      // 如果長按已啟動，鎖定音量/亮度調整
+      if (touchInfo.current.isLongPressActive) return;
 
-      // 檢查是否超過滑動閾值
-      const totalDeltaY = Math.abs(currentY - touchInfo.current.startY);
-      if (totalDeltaY < SWIPE_THRESHOLD) return;
+      // 檢查垂直移動是否超過閾值 (解決問題 1)
+      if (deltaY < VERTICAL_DRAG_THRESHOLD) return;
 
-      // 檢查水平移動是否過大(誤移判斷,增加到 100px)
-      const totalDeltaX = Math.abs(currentX - touchInfo.current.startX);
-      if (totalDeltaX > 100) return; // 水平移動超過 100px 視為誤操作
+      const yChange = touchInfo.current.lastY - currentY;
+      const xPercent = touchInfo.current.startX / rect.width;
 
-      // 根據左右側調整音量或亮度
-      if (touchInfo.current.isLeft) {
-        // 左側調整亮度
-        if (onBrightnessChange) {
-          onBrightnessChange(deltaY);
-        }
-      } else {
-        // 右側調整音量
-        if (onVolumeChange) {
-          onVolumeChange(deltaY);
-        }
+      if (xPercent < 0.25) {
+        if (onBrightnessChange) onBrightnessChange(yChange);
+      } else if (xPercent > 0.75) {
+        if (onVolumeChange) onVolumeChange(yChange);
       }
 
       touchInfo.current.lastY = currentY;
@@ -118,46 +127,62 @@ export const useVideoGestures = ({
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+
       if (!touchInfo.current || !videoContainerRef.current) return;
+
+      // 如果長按曾啟動過，結束它並返回 (解決問題 2)
+      if (touchInfo.current.isLongPressActive) {
+        if (onLongPressEnd) onLongPressEnd();
+        touchInfo.current = null;
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
 
       const endTime = Date.now();
       const duration = endTime - touchInfo.current.startTime;
       const rect = videoContainerRef.current.getBoundingClientRect();
-
-      // 使用 changedTouches 獲取結束時的觸摸點
       const touch = e.changedTouches[0];
+      const endX = touch.clientX - rect.left;
       const endY = touch.clientY - rect.top;
-      const deltaY = Math.abs(endY - touchInfo.current.startY);
 
-      // 如果是快速點擊且沒有明顯滑動,檢查是否為雙擊
-      if (duration < 200 && deltaY < SWIPE_THRESHOLD) {
-        const currentSide = touchInfo.current.isLeft ? 'left' : 'right';
-        const timeSinceLastTap = endTime - lastTapTime.current;
+      const movedX = Math.abs(endX - touchInfo.current.startX);
+      const movedY = Math.abs(endY - touchInfo.current.startY);
 
-        // 檢查是否為雙擊 (同一側且在時間範圍內)
-        if (
-          timeSinceLastTap < DOUBLE_TAP_DELAY &&
-          lastTapSide.current === currentSide
-        ) {
-          // 雙擊事件
-          if (currentSide === 'left' && onSeekBackward) {
-            onSeekBackward();
-          } else if (currentSide === 'right' && onSeekForward) {
-            onSeekForward();
+      // 快速點擊且沒怎麼動 -> 檢查雙擊
+      if (
+        duration < 200 &&
+        movedX < SWIPE_THRESHOLD &&
+        movedY < SWIPE_THRESHOLD
+      ) {
+        const xPercent = touchInfo.current.startX / rect.width;
+        let side: 'left' | 'right' | null = null;
+        if (xPercent < 0.25) side = 'left';
+        else if (xPercent > 0.75) side = 'right';
+
+        if (side) {
+          const timeSinceLastTap = endTime - lastTapTime.current;
+          if (
+            timeSinceLastTap < DOUBLE_TAP_DELAY &&
+            lastTapSide.current === side
+          ) {
+            if (side === 'left' && onSeekBackward) onSeekBackward();
+            else if (side === 'right' && onSeekForward) onSeekForward();
+            lastTapTime.current = 0;
+            lastTapSide.current = null;
+          } else {
+            lastTapTime.current = endTime;
+            lastTapSide.current = side;
           }
-          // 重置雙擊狀態
-          lastTapTime.current = 0;
-          lastTapSide.current = null;
-        } else {
-          // 記錄第一次點擊
-          lastTapTime.current = endTime;
-          lastTapSide.current = currentSide;
         }
       }
 
       touchInfo.current = null;
     },
-    [onSeekBackward, onSeekForward, videoContainerRef]
+    [onLongPressEnd, onSeekBackward, onSeekForward, videoContainerRef]
   );
 
   return {

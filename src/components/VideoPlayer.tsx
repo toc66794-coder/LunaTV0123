@@ -315,11 +315,12 @@ export default function VideoPlayer({
       const speedContainer = $controls.querySelector('#speed-btns-container');
       if (speedContainer) {
         const speeds = [0.5, 1, 1.5, 2, 3];
+        const currentRate = art.playbackRate;
         speedContainer.innerHTML = speeds
           .map(
             (s) => `
               <button onclick="window.setPlaySpeed(${s})" style="width: 34px; height: 32px; border-radius: 16px; border: none; background: ${
-              lastPlaybackRateRef.current === s
+              currentRate === s
                 ? 'rgba(59, 130, 246, 0.9)'
                 : 'rgba(0, 0, 0, 0.5)'
             }; color: white; cursor: pointer; font-size: 10px; font-weight: 800; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">${s}x</button>

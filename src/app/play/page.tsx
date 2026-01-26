@@ -22,7 +22,6 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { useLongPress } from '@/hooks/useLongPress';
 import { useVideoGestures } from '@/hooks/useVideoGestures';
 
 import { useDownload } from '@/components/DownloadProvider';
@@ -168,35 +167,6 @@ function PlayPageClient() {
   // 保存長按前的播放速度
   const speedBeforeLongPress = useRef<number>(1.0);
 
-  // Custom Long Press Hook
-  const {
-    onTouchStart,
-    onTouchMove,
-    onTouchEnd,
-    onMouseDown,
-    onMouseUp,
-    onMouseMove,
-    onMouseLeave,
-  } = useLongPress({
-    onLongPressStart: () => {
-      if (artPlayerRef.current) {
-        // 保存當前播放速度
-        speedBeforeLongPress.current = artPlayerRef.current.playbackRate;
-        artPlayerRef.current.playbackRate = 3;
-        artPlayerRef.current.notice.show = '3x 速播放中';
-      }
-    },
-    onLongPressEnd: () => {
-      if (artPlayerRef.current) {
-        // 恢復到長按前的播放速度
-        artPlayerRef.current.playbackRate = speedBeforeLongPress.current;
-        artPlayerRef.current.notice.show = '';
-      }
-    },
-    moveThreshold: 50, // Increased tolerance for movement
-    longPressDelay: 500,
-  });
-
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
   const videoUrlRef = useRef(videoUrl);
@@ -320,58 +290,60 @@ function PlayPageClient() {
     }, 1000);
   };
 
-  // 整合手勢控制
   const videoGestures = useVideoGestures({
     videoContainerRef: artRef,
+    longPressDelay: 500,
+    onLongPressStart: () => {
+      if (artPlayerRef.current) {
+        speedBeforeLongPress.current = artPlayerRef.current.playbackRate;
+        artPlayerRef.current.playbackRate = 3;
+        artPlayerRef.current.notice.show = '3x 速播放中';
+      }
+    },
+    onLongPressEnd: () => {
+      if (artPlayerRef.current) {
+        artPlayerRef.current.playbackRate = speedBeforeLongPress.current;
+        artPlayerRef.current.notice.show = '';
+      }
+    },
     onVolumeChange: (delta: number) => {
       if (!artPlayerRef.current) return;
-
-      // delta 為正表示向上滑動(增加音量),為負表示向下滑動(減少音量)
-      const volumeChange = delta * 0.005; // 調整靈敏度
+      const volumeChange = delta * 0.005;
       const newVolume = Math.max(
         0,
         Math.min(1, artPlayerRef.current.volume + volumeChange)
       );
       artPlayerRef.current.volume = newVolume;
-
       showGestureIndicator('volume', Math.round(newVolume * 100));
     },
     onBrightnessChange: (delta: number) => {
-      // delta 為正表示向上滑動(增加亮度),為負表示向下滑動(減少亮度)
-      const brightnessChange = delta * 0.5; // 調整靈敏度
+      const brightnessChange = delta * 0.5;
       const newBrightness = Math.max(
         0,
         Math.min(200, brightnessRef.current + brightnessChange)
       );
       brightnessRef.current = newBrightness;
       setBrightness(newBrightness);
-
-      // 同時更新 video 元素的亮度,確保全螢幕下也能生效
       if (artPlayerRef.current?.video) {
         artPlayerRef.current.video.style.filter = `brightness(${newBrightness}%)`;
       }
-
       showGestureIndicator('brightness', Math.round(newBrightness));
     },
     onSeekBackward: () => {
       if (!artPlayerRef.current) return;
-
       const newTime = Math.max(0, artPlayerRef.current.currentTime - 10);
       artPlayerRef.current.currentTime = newTime;
       artPlayerRef.current.notice.show = '◀◀ 後退 10 秒';
-
       showGestureIndicator('seek-backward', '-10s');
     },
     onSeekForward: () => {
       if (!artPlayerRef.current) return;
-
       const newTime = Math.min(
         artPlayerRef.current.duration,
         artPlayerRef.current.currentTime + 10
       );
       artPlayerRef.current.currentTime = newTime;
       artPlayerRef.current.notice.show = '快進 10 秒 ▶▶';
-
       showGestureIndicator('seek-forward', '+10s');
     },
   });
@@ -1928,22 +1900,13 @@ function PlayPageClient() {
                   downloadTasks={tasks}
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
-                  onTouchStart={(e: React.TouchEvent) => {
-                    onTouchStart(e);
-                    videoGestures.onTouchStart(e);
-                  }}
-                  onTouchMove={(e: React.TouchEvent) => {
-                    onTouchMove(e);
-                    videoGestures.onTouchMove(e);
-                  }}
-                  onTouchEnd={(e: React.TouchEvent) => {
-                    onTouchEnd(e);
-                    videoGestures.onTouchEnd(e);
-                  }}
-                  onMouseDown={onMouseDown}
-                  onMouseUp={onMouseUp}
-                  onMouseMove={onMouseMove}
-                  onMouseLeave={onMouseLeave}
+                  onTouchStart={videoGestures.onTouchStart}
+                  onTouchMove={videoGestures.onTouchMove}
+                  onTouchEnd={videoGestures.onTouchEnd}
+                  onMouseDown={videoGestures.onTouchStart as any}
+                  onMouseUp={videoGestures.onTouchEnd as any}
+                  onMouseMove={videoGestures.onTouchMove as any}
+                  onMouseLeave={videoGestures.onTouchEnd as any}
                 />
 
                 {/* 手勢反饋指示器 */}
