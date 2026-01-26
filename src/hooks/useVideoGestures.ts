@@ -41,8 +41,21 @@ export const useVideoGestures = ({
       const y = touch.clientY - rect.top;
       const containerWidth = rect.width;
 
-      // 判斷是左側還是右側 (左側 < 50%, 右側 >= 50%)
-      const isLeft = x < containerWidth / 2;
+      // 計算相對位置百分比
+      const xPercent = x / containerWidth;
+
+      // 只在左側 1/4 或右側 1/4 區域觸發手勢
+      // 左側: 0% - 25%, 右側: 75% - 100%
+      // 中間 50% (25% - 75%) 不觸發手勢,避免誤觸
+      let isLeft: boolean | null = null;
+      if (xPercent < 0.25) {
+        isLeft = true; // 左側 1/4
+      } else if (xPercent > 0.75) {
+        isLeft = false; // 右側 1/4
+      } else {
+        // 中間區域,不處理手勢
+        return;
+      }
 
       touchInfo.current = {
         startX: x,
