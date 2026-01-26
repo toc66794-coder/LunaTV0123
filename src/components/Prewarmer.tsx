@@ -45,10 +45,18 @@ export default function Prewarmer({ items }: PrewarmerProps) {
 
       if (pendingItems.length === 0) return;
 
-      // 每次處理 1 個項目，間隔 10 秒（避免負擔過重與 API 限制）
+      // 每次處理 1 個項目，間隔 5 秒（加速處理）
       const item = pendingItems[0];
       const key = `${item.title}_${item.year || ''}`;
       processedRef.current.add(key);
+
+      // 輔助函數：清理標題以進行模糊匹配
+      const cleanTitle = (str: string) => {
+        return str
+          .toLowerCase()
+          .replace(/\s+/g, '') // 去除空格
+          .replace(/[：:，,。.！!？?（）()\[\]【】\-_]/g, ''); // 去除標點
+      };
 
       try {
         // 1. 檢查遠端是否已有快取
@@ -60,7 +68,7 @@ export default function Prewarmer({ items }: PrewarmerProps) {
         const checkData = await checkRes.json();
 
         if (checkData.hit) {
-          console.log(`[Prewarmer] Hit: ${item.title}`);
+          console.log(`[Prewarmer] Hit (Skipped): ${item.title}`);
         } else {
           console.log(`[Prewarmer] Warming up: ${item.title}...`);
 
@@ -73,17 +81,21 @@ export default function Prewarmer({ items }: PrewarmerProps) {
             const searchData = await searchRes.json();
             const results = searchData.results || [];
 
-            // 匹配正確的影片 (標題與年份)
-            const match = results.find(
-              (r: any) =>
-                r.title.replaceAll(' ', '').toLowerCase() ===
-                  item.title.replaceAll(' ', '').toLowerCase() &&
-                (!item.year || r.year === item.year)
-            );
+            // 模糊匹配邏輯
+            const targetClean = cleanTitle(item.title);
+            const match = results.find((r: any) => {
+              const resultClean = cleanTitle(r.title);
+              // 雙向包含匹配 + 年份驗證 (如果有)
+              const titleMatch =
+                targetClean.includes(resultClean) ||
+                resultClean.includes(targetClean);
+              const yearMatch = !item.year || r.year === item.year || !r.year; // 如果結果沒年份也放行
+              return titleMatch && yearMatch;
+            });
 
             if (match) {
               console.log(
-                `[Prewarmer] Found candidate for ${item.title}, saving cache...`
+                `[Prewarmer] Found candidate for ${item.title} (${match.title}), saving cache...`
               );
               // 獲取詳情並沈澱
               const detailRes = await fetch(
@@ -103,8 +115,11 @@ export default function Prewarmer({ items }: PrewarmerProps) {
                     source_name: detailData.source_name,
                   }),
                 });
-                console.log(`[Prewarmer] Cache warmed for: ${item.title}`);
+                console.log(`[Prewarmer] 🔥 Cache warmed for: ${item.title}`);
+                // 可選：在這裡觸發 UI Toast
               }
+            } else {
+              console.log(`[Prewarmer] No match found for: ${item.title}`);
             }
           }
         }
@@ -112,12 +127,12 @@ export default function Prewarmer({ items }: PrewarmerProps) {
         console.warn(`[Prewarmer] Failed for ${item.title}`, e);
       }
 
-      // 排程下一個
-      timerRef.current = setTimeout(startPrewarming, 15000);
+      // 排程下一個 (5秒後)
+      timerRef.current = setTimeout(startPrewarming, 5000);
     };
 
-    // 延遲 5 秒後開始，讓路給主要頁面載入
-    timerRef.current = setTimeout(startPrewarming, 5000);
+    // 延遲 3 秒後開始
+    timerRef.current = setTimeout(startPrewarming, 3000);
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
