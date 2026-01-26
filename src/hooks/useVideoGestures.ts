@@ -14,6 +14,7 @@ interface TouchInfo {
   startTime: number;
   lastY: number;
   isLeft: boolean; // true = 左側, false = 右側
+  isLongPress: boolean; // 是否為長按
 }
 
 const DOUBLE_TAP_DELAY = 300; // 雙擊間隔時間 (ms)
@@ -63,6 +64,7 @@ export const useVideoGestures = ({
         startTime: Date.now(),
         lastY: y,
         isLeft,
+        isLongPress: false,
       };
     },
     [videoContainerRef]
@@ -77,11 +79,25 @@ export const useVideoGestures = ({
 
       const rect = videoContainerRef.current.getBoundingClientRect();
       const currentY = touch.clientY - rect.top;
+      const currentX = touch.clientX - rect.left;
       const deltaY = touchInfo.current.lastY - currentY; // 向上為正,向下為負
+
+      // 檢查是否為長按(持續時間超過 500ms)
+      const duration = Date.now() - touchInfo.current.startTime;
+      if (duration > 500) {
+        touchInfo.current.isLongPress = true;
+      }
+
+      // 如果是長按,不處理亮度/音量調整
+      if (touchInfo.current.isLongPress) return;
 
       // 檢查是否超過滑動閾值
       const totalDeltaY = Math.abs(currentY - touchInfo.current.startY);
       if (totalDeltaY < SWIPE_THRESHOLD) return;
+
+      // 檢查水平移動是否過大(誤移判斷,增加到 100px)
+      const totalDeltaX = Math.abs(currentX - touchInfo.current.startX);
+      if (totalDeltaX > 100) return; // 水平移動超過 100px 視為誤操作
 
       // 根據左右側調整音量或亮度
       if (touchInfo.current.isLeft) {
