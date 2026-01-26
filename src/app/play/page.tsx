@@ -271,33 +271,29 @@ function PlayPageClient() {
     };
   }, []);
 
-  // 全螢幕控制欄顯示狀態
+  // 全螢幕控制欄顯示狀態 - 與 ArtPlayer 控制欄同步
   const [showFullscreenControls, setShowFullscreenControls] = useState(false);
-  const fullscreenControlsTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // 切換全螢幕控制欄顯示
-  const toggleFullscreenControls = () => {
-    setShowFullscreenControls((prev) => !prev);
-
-    // 如果顯示控制欄,3秒後自動隱藏
-    if (!showFullscreenControls) {
-      if (fullscreenControlsTimeout.current) {
-        clearTimeout(fullscreenControlsTimeout.current);
-      }
-      fullscreenControlsTimeout.current = setTimeout(() => {
-        setShowFullscreenControls(false);
-      }, 3000);
-    }
-  };
-
-  // 清理自動隱藏計時器
+  // 監聽 ArtPlayer 控制欄顯示狀態
   useEffect(() => {
-    return () => {
-      if (fullscreenControlsTimeout.current) {
-        clearTimeout(fullscreenControlsTimeout.current);
+    if (!artPlayerRef.current || !isFullscreen) return;
+
+    const checkControlsVisibility = () => {
+      // ArtPlayer 控制欄顯示時,同步顯示我們的控制欄
+      const artControls = document.querySelector('.art-controls');
+      if (artControls) {
+        const isVisible = !artControls.classList.contains('art-controls-hide');
+        setShowFullscreenControls(isVisible);
       }
     };
-  }, []);
+
+    // 定期檢查控制欄狀態
+    const interval = setInterval(checkControlsVisibility, 100);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isFullscreen]);
 
   // 顯示手勢反饋
   const showGestureIndicator = (
