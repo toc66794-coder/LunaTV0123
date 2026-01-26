@@ -1705,7 +1705,7 @@ function PlayPageClient() {
                     airplay: true,
                     theme: '#22c55e',
                     lang: 'zh-cn',
-                    fastForward: false,
+                    fastForward: true, // 啟用原生長按加速與快進按鈕
                     autoOrientation: true,
                     lock: true,
                     moreVideoAttr: {
@@ -1736,15 +1736,8 @@ function PlayPageClient() {
                   downloadTasks={tasks}
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
+                  gestureHandlers={videoGestures as any}
                   ref={artRef}
-                  onContextMenu={videoGestures.onContextMenu as any}
-                  onTouchStart={videoGestures.onTouchStart}
-                  onTouchMove={videoGestures.onTouchMove}
-                  onTouchEnd={videoGestures.onTouchEnd}
-                  onMouseDown={videoGestures.onMouseDown as any}
-                  onMouseUp={videoGestures.onMouseUp as any}
-                  onMouseMove={videoGestures.onMouseMove as any}
-                  onMouseLeave={videoGestures.onMouseLeave as any}
                 />
 
                 {/* 手勢反饋指示器 */}

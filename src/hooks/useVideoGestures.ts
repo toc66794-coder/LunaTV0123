@@ -71,8 +71,6 @@ export const useVideoGestures = ({
       // 啟動長按定時器
       if (longPressTimer.current) clearTimeout(longPressTimer.current);
       longPressTimer.current = setTimeout(() => {
-        // 增加 !state.current.hasTriggeredDragging 判定：
-        // 如果使用者已經開始拉動音量/亮度，則不再觸發長按加速
         if (
           state.current &&
           !state.current.hasMovedSignificantlyForLongPress &&
@@ -206,59 +204,41 @@ export const useVideoGestures = ({
   );
   return useMemo(
     () => ({
-      onContextMenu: (e: React.MouseEvent | MouseEvent) => {
-        if (e.preventDefault) e.preventDefault();
-      },
-      onTouchStart: (e: React.TouchEvent | TouchEvent) => {
-        /* eslint-disable no-console */
-        const touch =
-          (e as TouchEvent).touches?.[0] ||
-          (e as TouchEvent).changedTouches?.[0] ||
-          (e as React.TouchEvent).touches?.[0];
+      onTouchStart: (e: TouchEvent) => {
+        const touch = e.touches[0];
         if (touch) handleStart(touch.clientX, touch.clientY, true);
       },
-      onTouchMove: (e: React.TouchEvent | TouchEvent) => {
-        const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
-
-        // 如果是全螢幕模式，直接全面攔截觸發權，因為全螢幕下不應有頁面捲動或導航干擾
-        // 如果非全螢幕，則維持現有機制 (偵測到手勢動作才攔截)
-        if (event.cancelable) {
+      onTouchMove: (e: TouchEvent) => {
+        if (e.cancelable) {
           if (
             isFullscreen ||
             state.current?.hasTriggeredDragging ||
             state.current?.isLongPressActive
           ) {
-            event.preventDefault();
+            e.preventDefault();
           }
         }
-
-        const touch =
-          (e as TouchEvent).touches?.[0] ||
-          (e as React.TouchEvent).touches?.[0];
+        const touch = e.touches[0];
         if (touch) handleMove(touch.clientX, touch.clientY);
       },
-      onTouchEnd: (e: React.TouchEvent | TouchEvent) => {
-        const touch =
-          (e as TouchEvent).changedTouches?.[0] ||
-          (e as React.TouchEvent).changedTouches?.[0];
+      onTouchEnd: (e: TouchEvent) => {
+        const touch = e.changedTouches[0];
         if (touch) handleEnd(touch.clientX, touch.clientY);
-        /* eslint-enable no-console */
       },
-      onMouseDown: (e: React.MouseEvent) => {
-        e.stopPropagation();
+      onMouseDown: (e: MouseEvent) => {
         handleStart(e.clientX, e.clientY);
       },
-      onMouseMove: (e: React.MouseEvent) => {
-        e.stopPropagation();
+      onMouseMove: (e: MouseEvent) => {
         handleMove(e.clientX, e.clientY);
       },
-      onMouseUp: (e: React.MouseEvent) => {
-        e.stopPropagation();
+      onMouseUp: (e: MouseEvent) => {
         handleEnd(e.clientX, e.clientY);
       },
-      onMouseLeave: (e: React.MouseEvent) => {
-        e.stopPropagation();
+      onMouseLeave: (e: MouseEvent) => {
         handleEnd(e.clientX, e.clientY);
+      },
+      onContextMenu: (e: MouseEvent) => {
+        e.preventDefault();
       },
     }),
     [handleEnd, handleMove, handleStart, isFullscreen]

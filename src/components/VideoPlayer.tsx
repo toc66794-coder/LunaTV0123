@@ -20,6 +20,16 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   downloadTasks: any;
   lastVolume: number;
   lastPlaybackRate: number;
+  gestureHandlers?: {
+    onTouchStart: (e: TouchEvent) => void;
+    onTouchMove: (e: TouchEvent) => void;
+    onTouchEnd: (e: TouchEvent) => void;
+    onMouseDown: (e: MouseEvent) => void;
+    onMouseMove: (e: MouseEvent) => void;
+    onMouseUp: (e: MouseEvent) => void;
+    onMouseLeave: (e: MouseEvent) => void;
+    onContextMenu: (e: MouseEvent) => void;
+  };
 }
 
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
@@ -39,6 +49,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasks,
       lastVolume,
       lastPlaybackRate,
+      gestureHandlers,
       ...rest
     },
     ref
@@ -411,68 +422,52 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [option.url, blockAdEnabled]);
 
-    const handlersRef = useRef({
-      onTouchStart: rest.onTouchStart,
-      onTouchMove: rest.onTouchMove,
-      onTouchEnd: rest.onTouchEnd,
-      onContextMenu: rest.onContextMenu,
-    });
-
     useEffect(() => {
-      handlersRef.current = {
-        onTouchStart: rest.onTouchStart,
-        onTouchMove: rest.onTouchMove,
-        onTouchEnd: rest.onTouchEnd,
-        onContextMenu: rest.onContextMenu,
-      };
-    }, [
-      rest.onTouchStart,
-      rest.onTouchMove,
-      rest.onTouchEnd,
-      rest.onContextMenu,
-    ]);
+      const art = artInstanceRef.current;
+      if (!art || !gestureHandlers) return;
 
-    useEffect(() => {
-      const container = artRef.current;
-      if (!container) return;
+      const $view = (art.template as any).$view;
+      if (!$view) return;
 
-      const onTouchStartLocal = (e: TouchEvent) => {
-        handlersRef.current.onTouchStart?.(e as any);
-      };
-      const onTouchMoveLocal = (e: TouchEvent) => {
-        handlersRef.current.onTouchMove?.(e as any);
-      };
-      const onTouchEndLocal = (e: TouchEvent) => {
-        handlersRef.current.onTouchEnd?.(e as any);
-      };
-      const onContextMenuLocal = (e: MouseEvent) => {
-        handlersRef.current.onContextMenu?.(e as any);
-      };
+      const onTouchStart = gestureHandlers.onTouchStart;
+      const onTouchMove = gestureHandlers.onTouchMove;
+      const onTouchEnd = gestureHandlers.onTouchEnd;
+      const onMouseDown = gestureHandlers.onMouseDown;
+      const onMouseMove = gestureHandlers.onMouseMove;
+      const onMouseUp = gestureHandlers.onMouseUp;
+      const onMouseLeave = gestureHandlers.onMouseLeave;
+      const onContextMenu = gestureHandlers.onContextMenu;
 
-      container.addEventListener('touchstart', onTouchStartLocal, {
-        passive: false,
-      });
-      container.addEventListener('touchmove', onTouchMoveLocal, {
-        passive: false,
-      });
-      container.addEventListener('touchend', onTouchEndLocal, {
-        passive: false,
-      });
-      container.addEventListener('contextmenu', onContextMenuLocal);
+      $view.addEventListener('touchstart', onTouchStart, { passive: false });
+      $view.addEventListener('touchmove', onTouchMove, { passive: false });
+      $view.addEventListener('touchend', onTouchEnd, { passive: false });
+      $view.addEventListener('mousedown', onMouseDown);
+      $view.addEventListener('mousemove', onMouseMove);
+      $view.addEventListener('mouseup', onMouseUp);
+      $view.addEventListener('mouseleave', onMouseLeave);
+      $view.addEventListener('contextmenu', onContextMenu);
 
       return () => {
-        container.removeEventListener('touchstart', onTouchStartLocal);
-        container.removeEventListener('touchmove', onTouchMoveLocal);
-        container.removeEventListener('touchend', onTouchEndLocal);
-        container.removeEventListener('contextmenu', onContextMenuLocal);
+        $view.removeEventListener('touchstart', onTouchStart);
+        $view.removeEventListener('touchmove', onTouchMove);
+        $view.removeEventListener('touchend', onTouchEnd);
+        $view.removeEventListener('mousedown', onMouseDown);
+        $view.removeEventListener('mousemove', onMouseMove);
+        $view.removeEventListener('mouseup', onMouseUp);
+        $view.removeEventListener('mouseleave', onMouseLeave);
+        $view.removeEventListener('contextmenu', onContextMenu);
       };
-    }, []);
+    }, [gestureHandlers]);
 
     // 從 rest 中排除已經手動綁定的 event handlers
     const {
       onTouchStart: _ts,
       onTouchMove: _tm,
       onTouchEnd: _te,
+      onMouseDown: _md,
+      onMouseMove: _mm,
+      onMouseUp: _mu,
+      onMouseLeave: _ml,
       onContextMenu: _cm,
       ...divProps
     } = rest as any;
