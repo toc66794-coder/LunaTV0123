@@ -1561,6 +1561,36 @@ function PlayPageClient() {
                 },
               },
               {
+                html: '預設片頭: 30s',
+                onClick: function () {
+                  handleSkipConfigChange({
+                    ...skipConfigRef.current,
+                    intro_time: 30,
+                  });
+                  artPlayerRef.current.notice.show = '片頭設為 30s';
+                },
+              },
+              {
+                html: '預設片頭: 60s',
+                onClick: function () {
+                  handleSkipConfigChange({
+                    ...skipConfigRef.current,
+                    intro_time: 60,
+                  });
+                  artPlayerRef.current.notice.show = '片頭設為 60s';
+                },
+              },
+              {
+                html: '預設片頭: 90s',
+                onClick: function () {
+                  handleSkipConfigChange({
+                    ...skipConfigRef.current,
+                    intro_time: 90,
+                  });
+                  artPlayerRef.current.notice.show = '片頭設為 90s';
+                },
+              },
+              {
                 html: '清除設定',
                 onClick: function () {
                   handleSkipConfigChange({
