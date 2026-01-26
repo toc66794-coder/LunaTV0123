@@ -2,7 +2,6 @@
 
 'use client';
 
-import { Heart } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -762,32 +761,40 @@ function PlayPageClient() {
       setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
       setLoadingMessage(
         currentSource && currentId
-          ? '🎬 正在获取视频详情...'
-          : '🔍 正在搜索播放源...'
+          ? '🎬 正在獲取影片詳情...'
+          : '🔍 正在搜尋播放源...'
       );
 
-      // --- 1. 快取劫持邏輯 (Cache Hijack) ---
+      // --- 1. 快取優先策略 (Hybrid Cache Strategy) ---
       let cachedDetail: SearchResult | null = null;
+      let backgroundSourcesTask: Promise<SearchResult[]> | null = null;
+
+      // 啟動背景搜尋
+      backgroundSourcesTask = fetchSourcesData(searchTitle || videoTitle);
+
       if (!currentSource || !currentId || needPreferRef.current) {
         try {
           const cacheTitle = searchTitle || videoTitle;
-          const cacheYear = videoYear || '';
           if (cacheTitle) {
             const cacheRes = await fetch(
-              `/api/admin/cache?title=${encodeURIComponent(
-                cacheTitle
-              )}&year=${cacheYear}`
+              `/api/admin/cache?title=${encodeURIComponent(cacheTitle)}&year=${
+                videoYearRef.current || ''
+              }`
             );
             const cacheData = await cacheRes.json();
             if (cacheData.hit) {
               console.log('[Cache] Hit!', cacheData.data);
-              // 獲取快取源的完整詳情
               const detailRes = await fetch(
                 `/api/detail?source=${cacheData.data.source}&id=${cacheData.data.id}`
               );
               if (detailRes.ok) {
                 cachedDetail = (await detailRes.json()) as SearchResult;
+                // --- 秒開快取 ---
+                setDetail(cachedDetail);
+                updateVideoUrl(cachedDetail, currentEpisodeIndexRef.current);
                 setLoadingMessage('🚀 正在使用秒開快取來源...');
+                setLoadingStage('ready');
+                // 注意：這裡不 return，繼續等待背景搜尋完成以供換源
               }
             }
           }
@@ -796,12 +803,8 @@ function PlayPageClient() {
         }
       }
 
-      let sourcesInfo: SearchResult[] = [];
-      if (cachedDetail) {
-        sourcesInfo = [cachedDetail];
-      } else {
-        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
-      }
+      // 等待全體搜尋結果
+      let sourcesInfo = await backgroundSourcesTask;
 
       // 3. Fallback: If we have specific source/id but it's not in the list, fetch it directly
       if (currentSource && currentId) {
@@ -810,70 +813,85 @@ function PlayPageClient() {
         );
 
         if (!targetInList) {
-          // If not found in search results, try to fetch specific detail
           const specificDetails = await fetchSourceDetail(
             currentSource,
             currentId
           );
           if (specificDetails && specificDetails.length > 0) {
-            // Add specific detail to the beginning of the list
             sourcesInfo = [...specificDetails, ...sourcesInfo];
           }
         }
       }
 
-      if (sourcesInfo.length === 0) {
-        setError('未找到匹配结果');
+      if (sourcesInfo.length === 0 && !cachedDetail) {
+        setError('未找到匹配結果');
         setLoading(false);
         return;
       }
 
-      let detailData: SearchResult = sourcesInfo[0];
-      // 指定源和id且无需优选
-      if (currentSource && currentId && !needPreferRef.current) {
-        const target = sourcesInfo.find(
-          (source) => source.source === currentSource && source.id === currentId
+      // 融合快取源到清單中，確保換源按鈕看得到
+      if (cachedDetail) {
+        const alreadyInList = sourcesInfo.some(
+          (s) => s.source === cachedDetail?.source && s.id === cachedDetail?.id
         );
-        if (target) {
-          detailData = target;
-        } else {
-          setError('未找到匹配结果');
-          setLoading(false);
-          return;
+        if (!alreadyInList) {
+          sourcesInfo = [cachedDetail, ...sourcesInfo];
         }
       }
 
-      // 未指定源和 id 或需要优选，且开启优选开关
-      if (
-        (!currentSource || !currentId || needPreferRef.current) &&
-        optimizationEnabled
-      ) {
-        setLoadingStage('preferring');
-        setLoadingMessage('⚡ 正在优选最佳播放源...');
+      // 更新可供切換的來源清單
+      setAvailableSources(sourcesInfo);
 
-        detailData = await preferBestSource(sourcesInfo);
+      let finalDetail = cachedDetail;
 
-        // --- 2. 自動預熱沈澱 (Auto Pre-warm) ---
-        // 如果是管理員，且剛才沒有命中快取，自動沈澱到 Upstash
-        const auth = getAuthInfoFromBrowserCookie();
-        const isAdmin = auth?.role === 'owner' || auth?.role === 'admin';
-        if (isAdmin && !cachedDetail) {
-          try {
-            fetch('/api/admin/cache', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                title: searchTitle || videoTitle,
-                year: videoYear,
-                source: detailData.source,
-                id: detailData.id,
-                source_name: detailData.source_name,
-              }),
-            });
-            console.log('[Cache] Pre-warm data saved');
-          } catch (e) {
-            /* ignore */
-          }
+      // 如果沒擊中快取，或者用戶指定了特定來源
+      if (!cachedDetail) {
+        finalDetail = sourcesInfo[0];
+
+        // 處理指定源
+        if (currentSource && currentId && !needPreferRef.current) {
+          const target = sourcesInfo.find(
+            (source) =>
+              source.source === currentSource && source.id === currentId
+          );
+          if (target) finalDetail = target;
+        }
+        // 處理優選
+        else if (optimizationEnabled) {
+          setLoadingStage('preferring');
+          setLoadingMessage('⚡ 正在為您優選最佳線路...');
+          finalDetail = await preferBestSource(sourcesInfo);
+        }
+
+        if (finalDetail) {
+          setDetail(finalDetail);
+          updateVideoUrl(finalDetail, currentEpisodeIndexRef.current);
+        }
+      }
+
+      const detailData = finalDetail;
+      if (!detailData) return;
+
+      // --- 2. 自動預熱沈澱 (Auto Pre-warm) ---
+      // 如果是管理員，且剛才沒有命中快取，自動沈澱到 Upstash
+      const auth = getAuthInfoFromBrowserCookie();
+      const isAdmin = auth?.role === 'owner' || auth?.role === 'admin';
+      if (isAdmin && !cachedDetail) {
+        try {
+          fetch('/api/admin/cache', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: searchTitle || videoTitle,
+              year: videoYearRef.current,
+              source: detailData.source,
+              id: detailData.id,
+              source_name: detailData.source_name,
+            }),
+          });
+          console.log('[Cache] Pre-warm data saved');
+        } catch (e) {
+          /* ignore */
         }
       }
 
@@ -887,11 +905,12 @@ function PlayPageClient() {
       setVideoCover(detailData.poster);
       setVideoDoubanId(detailData.douban_id || 0);
       setDetail(detailData);
-      if (currentEpisodeIndex >= detailData.episodes.length) {
+
+      if (currentEpisodeIndexRef.current >= detailData.episodes.length) {
         setCurrentEpisodeIndex(0);
       }
 
-      // 规范URL参数
+      // 規範 URL 參數
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.set('source', detailData.source);
       newUrl.searchParams.set('id', detailData.id);
@@ -901,9 +920,9 @@ function PlayPageClient() {
       window.history.replaceState({}, '', newUrl.toString());
 
       setLoadingStage('ready');
-      setLoadingMessage('✨ 准备就绪，即将开始播放...');
+      setLoadingMessage('✨ 準備就緒，即將開始播放...');
 
-      // 短暂延迟让用户看到完成状态
+      // 短暫延遲讓用戶看到完成狀態
       setTimeout(() => {
         setLoading(false);
       }, 1000);
@@ -1900,13 +1919,14 @@ function PlayPageClient() {
                   downloadTasks={tasks}
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
+                  ref={artRef}
                   onTouchStart={videoGestures.onTouchStart}
                   onTouchMove={videoGestures.onTouchMove}
                   onTouchEnd={videoGestures.onTouchEnd}
-                  onMouseDown={videoGestures.onTouchStart as any}
-                  onMouseUp={videoGestures.onTouchEnd as any}
-                  onMouseMove={videoGestures.onTouchMove as any}
-                  onMouseLeave={videoGestures.onTouchEnd as any}
+                  onMouseDown={videoGestures.onMouseDown as any}
+                  onMouseUp={videoGestures.onMouseUp as any}
+                  onMouseMove={videoGestures.onMouseMove as any}
+                  onMouseLeave={videoGestures.onMouseLeave as any}
                 />
 
                 {/* 手勢反饋指示器 */}
@@ -2177,37 +2197,40 @@ function PlayPageClient() {
         artPlayerRef={artPlayerRef}
         videoUrl={videoUrl}
         videoTitle={videoTitle}
-        episodeNumber={currentEpisodeIndex + 1}
-        totalEpisodes={totalEpisodes}
       />
     </PageLayout>
   );
 }
 
-// FavoriteIcon 组件
-const FavoriteIcon = ({ filled }: { filled: boolean }) => {
+// 輔助組件：收藏圖標
+function FavoriteIcon({ filled }: { filled: boolean }) {
   if (filled) {
     return (
       <svg
-        className='h-7 w-7'
+        className='h-7 w-7 text-red-500 fill-current'
         viewBox='0 0 24 24'
         xmlns='http://www.w3.org/2000/svg'
       >
-        <path
-          d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
-          fill='#ef4444' /* Tailwind red-500 */
-          stroke='#ef4444'
-          strokeWidth='2'
-          strokeLinecap='round'
-          strokeLinejoin='round'
-        />
+        <path d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z' />
       </svg>
     );
   }
   return (
-    <Heart className='h-7 w-7 stroke-[1] text-gray-600 dark:text-gray-300' />
+    <svg
+      className='h-7 w-7 text-gray-600 dark:text-gray-300'
+      fill='none'
+      stroke='currentColor'
+      viewBox='0 0 24 24'
+      strokeWidth='1'
+    >
+      <path
+        strokeLinecap='round'
+        strokeLinejoin='round'
+        d='M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z'
+      />
+    </svg>
   );
-};
+}
 
 export default function PlayPage() {
   return (
