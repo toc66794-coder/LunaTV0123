@@ -420,7 +420,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       const container = artRef.current;
       if (!container) return;
 
-      // 使用 capture: true 確保優先於 ArtPlayer 內部元素獲取事件
+      // 不再使用 capture: true，讓事件能正常冒泡回 ArtPlayer
       const onTouchStart = (e: TouchEvent) => {
         handlersRef.current.onTouchStart?.(e as any);
       };
@@ -434,35 +434,23 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         handlersRef.current.onContextMenu?.(e as any);
       };
 
+      // 使用原生監聽主要是為了 { passive: false } 支援 preventDefault
       container.addEventListener('touchstart', onTouchStart, {
         passive: false,
-        capture: true,
       });
       container.addEventListener('touchmove', onTouchMove, {
         passive: false,
-        capture: true,
       });
       container.addEventListener('touchend', onTouchEnd, {
         passive: false,
-        capture: true,
       });
-      container.addEventListener('contextmenu', onContextMenu, {
-        capture: true,
-      });
+      container.addEventListener('contextmenu', onContextMenu);
 
       return () => {
-        container.removeEventListener('touchstart', onTouchStart, {
-          capture: true,
-        });
-        container.removeEventListener('touchmove', onTouchMove, {
-          capture: true,
-        });
-        container.removeEventListener('touchend', onTouchEnd, {
-          capture: true,
-        });
-        container.removeEventListener('contextmenu', onContextMenu, {
-          capture: true,
-        });
+        container.removeEventListener('touchstart', onTouchStart);
+        container.removeEventListener('touchmove', onTouchMove);
+        container.removeEventListener('touchend', onTouchEnd);
+        container.removeEventListener('contextmenu', onContextMenu);
       };
     }, []);
 
@@ -477,14 +465,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           WebkitTouchCallout: 'none',
           touchAction: 'none',
         }}
-        // 保留 React 事件處理程序作為備選
-        onMouseDown={rest.onMouseDown}
-        onMouseMove={rest.onMouseMove}
-        onMouseUp={rest.onMouseUp}
-        onMouseLeave={rest.onMouseLeave}
-        onTouchStart={rest.onTouchStart}
-        onTouchMove={rest.onTouchMove}
-        onTouchEnd={rest.onTouchEnd}
+        {...rest}
       />
     );
   }

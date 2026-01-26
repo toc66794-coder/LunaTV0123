@@ -202,9 +202,6 @@ export const useVideoGestures = ({
       },
       onTouchStart: (e: React.TouchEvent | TouchEvent) => {
         /* eslint-disable no-console */
-        const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
-        if (event.stopPropagation) event.stopPropagation();
-        if (event.cancelable && event.preventDefault) event.preventDefault();
         const touch =
           (e as TouchEvent).touches?.[0] ||
           (e as TouchEvent).changedTouches?.[0] ||
@@ -213,7 +210,13 @@ export const useVideoGestures = ({
       },
       onTouchMove: (e: React.TouchEvent | TouchEvent) => {
         const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
-        if (event.cancelable && event.preventDefault) event.preventDefault();
+        // 只有在真的開始拖動時才攔截，防止連正常捲動都死掉（雖然有 touch-action: none）
+        if (
+          state.current?.hasTriggeredDragging ||
+          state.current?.isLongPressActive
+        ) {
+          if (event.cancelable && event.preventDefault) event.preventDefault();
+        }
         const touch =
           (e as TouchEvent).touches?.[0] ||
           (e as React.TouchEvent).touches?.[0];
