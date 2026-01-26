@@ -411,23 +411,27 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [option.url, blockAdEnabled]);
 
+    const handlersRef = useRef(rest);
+    useEffect(() => {
+      handlersRef.current = rest;
+    }, [rest]);
+
     useEffect(() => {
       const container = artRef.current;
       if (!container) return;
 
       // 使用 capture: true 確保優先於 ArtPlayer 內部元素獲取事件
-      // 使用 native handlers 並在組件卸載時清理
       const onTouchStart = (e: TouchEvent) => {
-        rest.onTouchStart?.(e as any);
+        handlersRef.current.onTouchStart?.(e as any);
       };
       const onTouchMove = (e: TouchEvent) => {
-        rest.onTouchMove?.(e as any);
+        handlersRef.current.onTouchMove?.(e as any);
       };
       const onTouchEnd = (e: TouchEvent) => {
-        rest.onTouchEnd?.(e as any);
+        handlersRef.current.onTouchEnd?.(e as any);
       };
       const onContextMenu = (e: MouseEvent) => {
-        rest.onContextMenu?.(e as any);
+        handlersRef.current.onContextMenu?.(e as any);
       };
 
       container.addEventListener('touchstart', onTouchStart, {
@@ -460,7 +464,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           capture: true,
         });
       };
-    }, [rest]);
+    }, []);
 
     return (
       <div

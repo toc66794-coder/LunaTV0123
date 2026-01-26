@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 interface UseVideoGesturesOptions {
   onVolumeChange?: (delta: number) => void;
@@ -195,52 +195,54 @@ export const useVideoGestures = ({
     },
     [onLongPressEnd, onSeekBackward, onSeekForward, videoContainerRef]
   );
-  return {
-    onContextMenu: (e: React.MouseEvent) => {
-      e.preventDefault();
-    },
-    onTouchStart: (e: React.TouchEvent | TouchEvent) => {
-      /* eslint-disable no-console */
-      console.log('[Gestures] native onTouchStart');
-      const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
-      if (event.stopPropagation) event.stopPropagation();
-      if (event.cancelable && event.preventDefault) event.preventDefault();
-      const touch =
-        (e as TouchEvent).touches?.[0] ||
-        (e as TouchEvent).changedTouches?.[0] ||
-        (e as React.TouchEvent).touches?.[0];
-      if (touch) handleStart(touch.clientX, touch.clientY, true);
-    },
-    onTouchMove: (e: React.TouchEvent | TouchEvent) => {
-      const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
-      if (event.cancelable && event.preventDefault) event.preventDefault();
-      const touch =
-        (e as TouchEvent).touches?.[0] || (e as React.TouchEvent).touches?.[0];
-      if (touch) handleMove(touch.clientX, touch.clientY);
-    },
-    onTouchEnd: (e: React.TouchEvent | TouchEvent) => {
-      console.log('[Gestures] native onTouchEnd');
-      const touch =
-        (e as TouchEvent).changedTouches?.[0] ||
-        (e as React.TouchEvent).changedTouches?.[0];
-      if (touch) handleEnd(touch.clientX, touch.clientY);
-      /* eslint-enable no-console */
-    },
-    onMouseDown: (e: React.MouseEvent) => {
-      e.stopPropagation();
-      handleStart(e.clientX, e.clientY);
-    },
-    onMouseMove: (e: React.MouseEvent) => {
-      e.stopPropagation();
-      handleMove(e.clientX, e.clientY);
-    },
-    onMouseUp: (e: React.MouseEvent) => {
-      e.stopPropagation();
-      handleEnd(e.clientX, e.clientY);
-    },
-    onMouseLeave: (e: React.MouseEvent) => {
-      e.stopPropagation();
-      handleEnd(e.clientX, e.clientY);
-    },
-  };
+  return useMemo(
+    () => ({
+      onContextMenu: (e: React.MouseEvent | MouseEvent) => {
+        if (e.preventDefault) e.preventDefault();
+      },
+      onTouchStart: (e: React.TouchEvent | TouchEvent) => {
+        /* eslint-disable no-console */
+        const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
+        if (event.stopPropagation) event.stopPropagation();
+        if (event.cancelable && event.preventDefault) event.preventDefault();
+        const touch =
+          (e as TouchEvent).touches?.[0] ||
+          (e as TouchEvent).changedTouches?.[0] ||
+          (e as React.TouchEvent).touches?.[0];
+        if (touch) handleStart(touch.clientX, touch.clientY, true);
+      },
+      onTouchMove: (e: React.TouchEvent | TouchEvent) => {
+        const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
+        if (event.cancelable && event.preventDefault) event.preventDefault();
+        const touch =
+          (e as TouchEvent).touches?.[0] ||
+          (e as React.TouchEvent).touches?.[0];
+        if (touch) handleMove(touch.clientX, touch.clientY);
+      },
+      onTouchEnd: (e: React.TouchEvent | TouchEvent) => {
+        const touch =
+          (e as TouchEvent).changedTouches?.[0] ||
+          (e as React.TouchEvent).changedTouches?.[0];
+        if (touch) handleEnd(touch.clientX, touch.clientY);
+        /* eslint-enable no-console */
+      },
+      onMouseDown: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        handleStart(e.clientX, e.clientY);
+      },
+      onMouseMove: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        handleMove(e.clientX, e.clientY);
+      },
+      onMouseUp: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        handleEnd(e.clientX, e.clientY);
+      },
+      onMouseLeave: (e: React.MouseEvent) => {
+        e.stopPropagation();
+        handleEnd(e.clientX, e.clientY);
+      },
+    }),
+    [handleEnd, handleMove, handleStart]
+  );
 };
