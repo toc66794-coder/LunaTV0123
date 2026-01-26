@@ -2,7 +2,7 @@
 'use client';
 
 import Artplayer from 'artplayer';
-import { forwardRef, useEffect, useImperativeHandle,useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import React from 'react';
 
 interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -411,7 +411,52 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [option.url, blockAdEnabled]);
 
-    return <div ref={artRef} className={className} style={style} {...rest} />;
+    useEffect(() => {
+      const container = artRef.current;
+      if (!container) return;
+
+      const handleTouchStart = (e: TouchEvent) => rest.onTouchStart?.(e as any);
+      const handleTouchMove = (e: TouchEvent) => rest.onTouchMove?.(e as any);
+      const handleTouchEnd = (e: TouchEvent) => rest.onTouchEnd?.(e as any);
+      const handleContextMenu = (e: MouseEvent) =>
+        rest.onContextMenu?.(e as any);
+
+      // 使用 { passive: false } 強制允許 preventDefault
+      container.addEventListener('touchstart', handleTouchStart, {
+        passive: false,
+      });
+      container.addEventListener('touchmove', handleTouchMove, {
+        passive: false,
+      });
+      container.addEventListener('touchend', handleTouchEnd, {
+        passive: false,
+      });
+      container.addEventListener('contextmenu', handleContextMenu);
+
+      return () => {
+        container.removeEventListener('touchstart', handleTouchStart);
+        container.removeEventListener('touchmove', handleTouchMove);
+        container.removeEventListener('touchend', handleTouchEnd);
+        container.removeEventListener('contextmenu', handleContextMenu);
+      };
+    }, [rest]);
+
+    return (
+      <div
+        ref={artRef}
+        className={className}
+        style={{
+          ...style,
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none',
+        }}
+        onMouseDown={rest.onMouseDown}
+        onMouseMove={rest.onMouseMove}
+        onMouseUp={rest.onMouseUp}
+        onMouseLeave={rest.onMouseLeave}
+      />
+    );
   }
 );
 
