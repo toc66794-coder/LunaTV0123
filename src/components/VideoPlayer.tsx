@@ -62,13 +62,6 @@ export default function VideoPlayer({
     }
   }, [blockAdEnabled, skipConfig, downloadTasks, lastVolume, lastPlaybackRate]);
 
-  // 確保視頻擁有正確的 Source 標籤 (AirPlay 支持)
-    video.disableRemotePlayback = false;
-    if (video.hasAttribute('disableRemotePlayback')) {
-      video.removeAttribute('disableRemotePlayback');
-    }
-  };
-
   useEffect(() => {
     if (!artRef.current) return;
 

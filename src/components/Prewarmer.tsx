@@ -56,7 +56,7 @@ export default function Prewarmer({ items, onCacheUpdate }: PrewarmerProps) {
         return str
           .toLowerCase()
           .replace(/\s+/g, '') // 去除空格
-          .replace(/[：:，,。.！!？?（）()\[\]【】\-_]/g, ''); // 去除標點
+          .replace(/[：:，,。.！!？?（）()[\]【】\-_]/g, ''); // 去除標點
       };
 
       try {
@@ -140,7 +140,7 @@ export default function Prewarmer({ items, onCacheUpdate }: PrewarmerProps) {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [items, isAuthorized]);
+  }, [items, isAuthorized, onCacheUpdate]);
 
   return null; // 不佔用 UI 空間
 }
