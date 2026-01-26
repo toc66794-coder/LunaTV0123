@@ -215,13 +215,13 @@ export const useVideoGestures = ({
       },
       onTouchMove: (e: React.TouchEvent | TouchEvent) => {
         const event = (e as React.TouchEvent).nativeEvent || (e as TouchEvent);
-        // 只有在真的開始拖動時才攔截，防止連正常捲動都死掉（雖然有 touch-action: none）
-        if (
-          state.current?.hasTriggeredDragging ||
-          state.current?.isLongPressActive
-        ) {
-          if (event.cancelable && event.preventDefault) event.preventDefault();
+
+        // 關鍵：在手勢區域內，一旦滑動就立即攔截瀏覽器預設行為
+        // 這能解決 Android Chrome 偶爾會把垂直滑動誤判為頁面導航的問題
+        if (event.cancelable) {
+          event.preventDefault();
         }
+
         const touch =
           (e as TouchEvent).touches?.[0] ||
           (e as React.TouchEvent).touches?.[0];
