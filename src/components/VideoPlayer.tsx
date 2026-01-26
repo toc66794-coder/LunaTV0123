@@ -79,8 +79,6 @@ export default function VideoPlayer({
     }
   };
 
-  // 去廣告過濾函數
-  function filterAdsFromM3U8(m3u8Content: string): string {
   useEffect(() => {
     if (!artRef.current) return;
 
@@ -108,11 +106,12 @@ export default function VideoPlayer({
               constructor(config: any) {
                 super(config);
                 const load = this.load.bind(this);
-                this.load = function (context: any, config: any, callbacks: any) {
-                  if (
-                    context.type === 'manifest' ||
-                    context.type === 'level'
-                  ) {
+                this.load = function (
+                  context: any,
+                  config: any,
+                  callbacks: any
+                ) {
+                  if (context.type === 'manifest' || context.type === 'level') {
                     const onSuccess = callbacks.onSuccess;
                     callbacks.onSuccess = function (
                       response: any,
@@ -123,7 +122,10 @@ export default function VideoPlayer({
                         // 移除廣告分段
                         response.data = response.data
                           .split('\n')
-                          .filter((line: string) => !line.includes('#EXT-X-DISCONTINUITY'))
+                          .filter(
+                            (line: string) =>
+                              !line.includes('#EXT-X-DISCONTINUITY')
+                          )
                           .join('\n');
                       }
                       return onSuccess(response, stats, context, null);
