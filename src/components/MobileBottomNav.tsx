@@ -6,7 +6,6 @@ import {
   Cat,
   Clover,
   Download,
-
   Film,
   Home,
   Radio,
@@ -16,6 +15,7 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+
 import { useDownload } from './DownloadProvider';
 
 interface MobileBottomNavProps {

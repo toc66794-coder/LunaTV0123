@@ -63,16 +63,6 @@ export default function VideoPlayer({
   }, [blockAdEnabled, skipConfig, downloadTasks, lastVolume, lastPlaybackRate]);
 
   // 確保視頻擁有正確的 Source 標籤 (AirPlay 支持)
-  const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
-    if (!video || !url) return;
-    const sources = Array.from(video.getElementsByTagName('source'));
-    const existed = sources.some((s) => s.src === url);
-    if (!existed) {
-      sources.forEach((s) => s.remove());
-      const sourceEl = document.createElement('source');
-      sourceEl.src = url;
-      video.appendChild(sourceEl);
-    }
     video.disableRemotePlayback = false;
     if (video.hasAttribute('disableRemotePlayback')) {
       video.removeAttribute('disableRemotePlayback');
@@ -421,6 +411,7 @@ export default function VideoPlayer({
       }
       artInstanceRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [option.url, blockAdEnabled]); // 當 URL 或 去廣告設定 改變時重新初始化
 
   return <div ref={artRef} className={className} style={style} {...rest} />;

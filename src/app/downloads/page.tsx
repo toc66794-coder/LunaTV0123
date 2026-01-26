@@ -1,15 +1,16 @@
 'use client';
 
+import {
+  AlertCircle,
+  CheckCircle,
+  Download,
+  Loader2,
+  Trash2,
+} from 'lucide-react';
 import React from 'react';
+
 import { useDownload } from '@/components/DownloadProvider';
 import PageLayout from '@/components/PageLayout';
-import {
-  Trash2,
-  Download,
-  CheckCircle,
-  AlertCircle,
-  Loader2,
-} from 'lucide-react';
 
 export default function DownloadsPage() {
   const { tasks, clearCompletedTasks } = useDownload();

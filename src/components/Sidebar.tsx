@@ -5,6 +5,7 @@
 import {
   Cat,
   Clover,
+  Download,
   Film,
   Home,
   Menu,
@@ -12,7 +13,6 @@ import {
   Search,
   Star,
   Tv,
-  Download,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -25,8 +25,8 @@ import {
   useState,
 } from 'react';
 
-import { useSite } from './SiteProvider';
 import { useDownload } from './DownloadProvider';
+import { useSite } from './SiteProvider';
 
 interface SidebarContextType {
   isCollapsed: boolean;
