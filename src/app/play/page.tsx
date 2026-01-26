@@ -889,15 +889,26 @@ function PlayPageClient() {
       } else {
         sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
       }
-      if (
-        currentSource &&
-        currentId &&
-        !sourcesInfo.some(
+
+      // 3. Fallback: If we have specific source/id but it's not in the list, fetch it directly
+      if (currentSource && currentId) {
+        const targetInList = sourcesInfo.find(
           (source) => source.source === currentSource && source.id === currentId
-        )
-      ) {
-        sourcesInfo = await fetchSourceDetail(currentSource, currentId);
+        );
+
+        if (!targetInList) {
+          // If not found in search results, try to fetch specific detail
+          const specificDetails = await fetchSourceDetail(
+            currentSource,
+            currentId
+          );
+          if (specificDetails && specificDetails.length > 0) {
+            // Add specific detail to the beginning of the list
+            sourcesInfo = [...specificDetails, ...sourcesInfo];
+          }
+        }
       }
+
       if (sourcesInfo.length === 0) {
         setError('未找到匹配结果');
         setLoading(false);
