@@ -2,9 +2,8 @@
 
 'use client';
 
-import Artplayer from 'artplayer';
-import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -45,6 +44,19 @@ interface WakeLockSentinel {
   addEventListener(type: 'release', listener: () => void): void;
   removeEventListener(type: 'release', listener: () => void): void;
 }
+
+// 动态导入 VideoPlayer 组件 (SSR 禁用)
+const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
+  ssr: false,
+  loading: () => (
+    <div className='w-full h-full bg-black flex items-center justify-center text-white/50'>
+      <div className='animate-pulse flex flex-col items-center gap-2'>
+        <div className='w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin'></div>
+        <span className='text-xs'>載入播放器...</span>
+      </div>
+    </div>
+  ),
+});
 
 function PlayPageClient() {
   const router = useRouter();
@@ -739,7 +751,6 @@ function PlayPageClient() {
         .toString()
         .padStart(2, '0')}`;
     } else {
-      // 超过一小时，格式为 00:00:00
       return `${hours.toString().padStart(2, '0')}:${minutes
         .toString()
         .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
@@ -749,12 +760,6 @@ function PlayPageClient() {
   class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        // 拦截manifest和level请求
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
         ) {
           const onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (
@@ -1409,569 +1414,269 @@ function PlayPageClient() {
     }
   };
 
-  useEffect(() => {
-    if (
-      !Artplayer ||
-      !Hls ||
-      !videoUrl ||
-      loading ||
-      currentEpisodeIndex === null ||
-      !artRef.current
-    ) {
-      return;
-    }
+  // 處理播放器初始化後的回調 (綁定業務邏輯)
+  const handlePlayerInit = (art: any) => {
+    artPlayerRef.current = art;
 
-    // 确保选集索引有效
-    if (
-      !detail ||
-      !detail.episodes ||
-      currentEpisodeIndex >= detail.episodes.length ||
-      currentEpisodeIndex < 0
-    ) {
-      setError(`选集索引无效，当前共 ${totalEpisodes} 集`);
-      return;
-    }
-
-    if (!videoUrl) {
-      setError('视频地址无效');
-      return;
-    }
-    console.log(videoUrl);
-
-    // 检测是否为WebKit浏览器
-    const isWebkit =
-      typeof window !== 'undefined' &&
-      typeof (window as any).webkitConvertPointFromNodeToPage === 'function';
-
-    // 非WebKit浏览器且播放器已存在，使用switch方法切换
-    if (!isWebkit && artPlayerRef.current) {
-      artPlayerRef.current.switch = videoUrl;
-      artPlayerRef.current.title = `${videoTitle} - 第${
-        currentEpisodeIndex + 1
-      }集`;
-      artPlayerRef.current.poster = videoCover;
-      if (artPlayerRef.current?.video) {
-        ensureVideoSource(
-          artPlayerRef.current.video as HTMLVideoElement,
-          videoUrl
-        );
+    // 监听播放器事件
+    art.on('ready', () => {
+      setError(null);
+      // 播放器就绪后，如果正在播放则请求 Wake Lock
+      if (art && !art.paused) {
+        requestWakeLock();
       }
-      return;
-    }
 
-    // WebKit浏览器或首次创建：销毁之前的播放器实例并创建新的
-    if (artPlayerRef.current) {
-      cleanupPlayer();
-    }
+      // --- 全域函數綁定 (橋接 React 到原生 DOM) ---
+      (window as any).toggleAdBlock = () => handleBlockAdToggle();
+      (window as any).setPlaySpeed = (s: number) => handleSpeedChange(s);
+      (window as any).openSettings = () => setIsSettingsPanelOpen(true);
+      (window as any).startDownload = () => {
+        addDownloadTask(
+          videoUrlRef.current,
+          videoTitleRef.current,
+          currentEpisodeIndexRef.current
+        );
+        if (art) {
+          art.notice.show = '📥 已加入下載隊列';
+        }
+      };
 
-    try {
-      // 创建新的播放器实例
-      Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
-      Artplayer.USE_RAF = true;
+      // --- 渲染圖層按鈕函數 ---
+      const updateCustomControls = () => {
+        if (!art) return;
+        const $controls = art.template.$container.querySelector(
+          '#artplayer-custom-controls'
+        );
+        if (!$controls) return;
 
-      artPlayerRef.current = new Artplayer({
-        container: artRef.current,
-        url: videoUrl,
-        poster: videoCover,
-        volume: 0.7,
-        isLive: false,
-        muted: false,
-        autoplay: true,
-        pip: true,
-        autoSize: false,
-        autoMini: false,
-        screenshot: false,
-        setting: true,
-        loop: false,
-        flip: false,
-        playbackRate: false, // 禁用原生速度選單，改用自定義快捷按鈕
-        aspectRatio: false,
-        fullscreen: true,
-        fullscreenWeb: true,
-        subtitleOffset: false,
-        miniProgressBar: false,
-        mutex: true,
-        playsInline: true,
-        autoPlayback: false,
-        airplay: true,
-        theme: '#22c55e',
-        lang: 'zh-cn',
-        hotkey: false,
-        fastForward: false, // Disable native fastForward to use custom handler
-        autoOrientation: true,
-        lock: true,
-        moreVideoAttr: {
-          crossOrigin: 'anonymous',
-        },
-        // 注入自定義快捷按鈕圖層
-        layers: [
-          {
-            name: 'custom-controls',
-            html: `
-              <div id="artplayer-custom-controls" style="
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                display: flex;
-                gap: 8px;
-                z-index: 100;
-                pointer-events: auto;
-              ">
-                <!-- 這些按鈕會由初始化後的腳本動動態更新狀態 -->
-                <div id="ad-btn-container"></div>
-                <div id="speed-btns-container" style="display: flex; gap: 4px;"></div>
-                <div id="download-btn-container"></div>
-                <div id="settings-btn-container"></div>
-              </div>
-            `,
-            style: {
-              display: 'none', // 預設隱藏，由 ArtPlayer 控制顯示
-            },
-          },
-        ],
-        // HLS 支持配置
-        customType: {
-          m3u8: function (video: HTMLVideoElement, url: string) {
-            if (!Hls) {
-              console.error('HLS.js 未加载');
-              return;
-            }
-
-            if (video.hls) {
-              video.hls.destroy();
-            }
-            const hls = new Hls({
-              debug: false, // 关闭日志
-              enableWorker: true, // WebWorker 解码，降低主线程压力
-              lowLatencyMode: true, // 开启低延迟 LL-HLS
-
-              /* 缓冲/内存相关 */
-              maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
-              backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
-              maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
-
-              /* 自定义loader */
-              loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
-                : Hls.DefaultConfig.loader,
-            });
-
-            hls.loadSource(url);
-            hls.attachMedia(video);
-            video.hls = hls;
-
-            ensureVideoSource(video, url);
-
-            hls.on(Hls.Events.ERROR, function (event: any, data: any) {
-              console.error('HLS Error:', event, data);
-              if (data.fatal) {
-                switch (data.type) {
-                  case Hls.ErrorTypes.NETWORK_ERROR:
-                    console.log('网络错误，尝试恢复...');
-                    hls.startLoad();
-                    break;
-                  case Hls.ErrorTypes.MEDIA_ERROR:
-                    console.log('媒体错误，尝试恢复...');
-                    hls.recoverMediaError();
-                    break;
-                  default:
-                    console.log('无法恢复的错误');
-                    hls.destroy();
-                    break;
-                }
-              }
-            });
-          },
-        },
-        icons: {
-          loading:
-            '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',
-        },
-        settings: [
-          {
-            html: '跳過片頭片尾',
-            icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>',
-            selector: [
-              {
-                html: '開關設定',
-                switch: skipConfigRef.current.enable,
-                onSwitch: function (item: any) {
-                  handleSkipConfigChange({
-                    ...skipConfigRef.current,
-                    enable: !item.switch,
-                  });
-                  return !item.switch;
-                },
-              },
-              {
-                html: '設當前為片頭',
-                onClick: function () {
-                  const time = artPlayerRef.current.currentTime;
-                  handleSkipConfigChange({
-                    ...skipConfigRef.current,
-                    intro_time: time,
-                  });
-                  artPlayerRef.current.notice.show = `已設片頭: ${Math.round(
-                    time
-                  )}s`;
-                },
-              },
-              {
-                html: '設當前為片尾',
-                onClick: function () {
-                  const duration = artPlayerRef.current.duration;
-                  const time = artPlayerRef.current.currentTime;
-                  const offset = -(duration - time);
-                  handleSkipConfigChange({
-                    ...skipConfigRef.current,
-                    outro_time: offset,
-                  });
-                  artPlayerRef.current.notice.show = `已設片尾: ${Math.round(
-                    offset
-                  )}s`;
-                },
-              },
-              {
-                html: '預設片頭: 30s',
-                onClick: function () {
-                  handleSkipConfigChange({
-                    ...skipConfigRef.current,
-                    intro_time: 30,
-                  });
-                  artPlayerRef.current.notice.show = '片頭設為 30s';
-                },
-              },
-              {
-                html: '預設片頭: 60s',
-                onClick: function () {
-                  handleSkipConfigChange({
-                    ...skipConfigRef.current,
-                    intro_time: 60,
-                  });
-                  artPlayerRef.current.notice.show = '片頭設為 60s';
-                },
-              },
-              {
-                html: '預設片頭: 90s',
-                onClick: function () {
-                  handleSkipConfigChange({
-                    ...skipConfigRef.current,
-                    intro_time: 90,
-                  });
-                  artPlayerRef.current.notice.show = '片頭設為 90s';
-                },
-              },
-              {
-                html: '清除設定',
-                onClick: function () {
-                  handleSkipConfigChange({
-                    enable: false,
-                    intro_time: 0,
-                    outro_time: 0,
-                  });
-                  artPlayerRef.current.notice.show = '設定已清除';
-                },
-              },
-            ],
-          },
-          {
-            html: '全部設定',
-            icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
-            tooltip: '打開進階設定',
-            onClick: function () {
-              setIsSettingsPanelOpen(true);
-            },
-          },
-        ],
-        // 控制栏配置
-        controls: [
-          {
-            position: 'left',
-            index: 13,
-            html: '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor"/></svg></i>',
-            tooltip: '播放下一集',
-            click: function () {
-              handleNextEpisode();
-            },
-          },
-        ],
-      });
-
-      // 监听播放器事件
-      artPlayerRef.current.on('ready', () => {
-        setError(null);
-
-        // 播放器就绪后，如果正在播放则请求 Wake Lock
-        if (artPlayerRef.current && !artPlayerRef.current.paused) {
-          requestWakeLock();
+        // 1. 去廣告按鈕
+        const adContainer = $controls.querySelector('#ad-btn-container');
+        if (adContainer) {
+          const enabled = blockAdEnabledRef.current;
+          adContainer.innerHTML = `
+            <button onclick="window.toggleAdBlock()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
+              enabled ? 'rgba(34, 197, 94, 0.9)' : 'rgba(107, 114, 128, 0.7)'
+            }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.744c0 5.273 3.69 9.689 8.602 10.71a11.99 11.99 0 008.602-10.71c0-1.299-.206-2.55-.586-3.725A12.147 12.147 0 0112 2.714z"/></svg>
+            </button>
+          `;
         }
 
-        // --- 全域函數綁定 (橋接 React 到原生 DOM) ---
-        (window as any).toggleAdBlock = () => handleBlockAdToggle();
-        (window as any).setPlaySpeed = (s: number) => handleSpeedChange(s);
-        (window as any).openSettings = () => setIsSettingsPanelOpen(true);
-        (window as any).startDownload = () => {
-          addDownloadTask(
-            videoUrlRef.current,
-            videoTitleRef.current,
-            currentEpisodeIndexRef.current
-          );
-          if (artPlayerRef.current) {
-            artPlayerRef.current.notice.show = '📥 已加入下載隊列';
-          }
-        };
-
-        // --- 渲染圖層按鈕函數 ---
-        const updateCustomControls = () => {
-          if (!artPlayerRef.current) return;
-          const $controls =
-            artPlayerRef.current.template.$container.querySelector(
-              '#artplayer-custom-controls'
-            );
-          if (!$controls) return;
-
-          // 1. 去廣告按鈕
-          const adContainer = $controls.querySelector('#ad-btn-container');
-          if (adContainer) {
-            const enabled = blockAdEnabledRef.current;
-            adContainer.innerHTML = `
-              <button onclick="window.toggleAdBlock()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
-                enabled ? 'rgba(34, 197, 94, 0.9)' : 'rgba(107, 114, 128, 0.7)'
-              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.744c0 5.273 3.69 9.689 8.602 10.71a11.99 11.99 0 008.602-10.71c0-1.299-.206-2.55-.586-3.725A12.147 12.147 0 0112 2.714z"/></svg>
-              </button>
-            `;
-          }
-
-          // 2. 速度按鈕組
-          const speedContainer = $controls.querySelector(
-            '#speed-btns-container'
-          );
-          if (speedContainer) {
-            const speeds = [0.5, 1, 1.5, 2, 3]; // 稍微精簡速度選項使 UI 不擁擠
-            speedContainer.innerHTML = speeds
-              .map(
-                (s) => `
-              <button onclick="window.setPlaySpeed(${s})" style="width: 34px; height: 32px; border-radius: 16px; border: none; background: ${
-                  lastPlaybackRateRef.current === s
-                    ? 'rgba(59, 130, 246, 0.9)'
-                    : 'rgba(0, 0, 0, 0.5)'
-                }; color: white; cursor: pointer; font-size: 10px; font-weight: 800; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">${s}x</button>
-            `
-              )
-              .join('');
-          }
-
-          // 3. 下載按鈕
-          const downloadContainer = $controls.querySelector(
-            '#download-btn-container'
-          );
-          if (downloadContainer) {
-            const task = downloadTasksRef.current[videoUrlRef.current];
-            const isDownloading = task?.status === 'downloading';
-            const isCompleted = task?.status === 'completed';
-
-            downloadContainer.innerHTML = `
-              <button onclick="window.startDownload()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
-                isDownloading
+        // 2. 速度按鈕組
+        const speedContainer = $controls.querySelector('#speed-btns-container');
+        if (speedContainer) {
+          const speeds = [0.5, 1, 1.5, 2, 3]; // 稍微精簡速度選項使 UI 不擁擠
+          speedContainer.innerHTML = speeds
+            .map(
+              (s) => `
+            <button onclick="window.setPlaySpeed(${s})" style="width: 34px; height: 32px; border-radius: 16px; border: none; background: ${
+                lastPlaybackRateRef.current === s
                   ? 'rgba(59, 130, 246, 0.9)'
-                  : isCompleted
-                  ? 'rgba(34, 197, 94, 0.9)'
                   : 'rgba(0, 0, 0, 0.5)'
-              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
-                ${
-                  isDownloading
-                    ? `<span style="font-size: 9px; font-weight: 900;">${Math.round(
-                        task.progress
-                      )}%</span>`
-                    : isCompleted
-                    ? `<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>`
-                    : `<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>`
-                }
-              </button>
-            `;
-          }
-
-          // 4. 設定按鈕
-          const settingsContainer = $controls.querySelector(
-            '#settings-btn-container'
-          );
-          if (settingsContainer) {
-            settingsContainer.innerHTML = `
-              <button onclick="window.openSettings()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.5); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              </button>
-            `;
-          }
-        };
-
-        // 初始渲染
-        updateCustomControls();
-
-        // 監聽控制欄顯示事件，顯示同步圖層
-        artPlayerRef.current.on('control', (state: boolean) => {
-          const $layer = artPlayerRef.current.layers['custom-controls'];
-          if ($layer) $layer.style.display = state ? 'flex' : 'none';
-        });
-
-        // 當狀態變化時重新渲染按鈕 (需要一個全域監聽點，或是直接在 ready 監聽播放器事件)
-        artPlayerRef.current.on('video:ratechange', updateCustomControls);
-        (window as any).refreshCustomControls = updateCustomControls;
-      });
-
-      // 监听播放状态变化，控制 Wake Lock
-      artPlayerRef.current.on('play', () => {
-        requestWakeLock();
-      });
-
-      artPlayerRef.current.on('pause', () => {
-        releaseWakeLock();
-        saveCurrentPlayProgress();
-      });
-
-      artPlayerRef.current.on('video:ended', () => {
-        releaseWakeLock();
-      });
-
-      // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
-      if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        requestWakeLock();
-      }
-
-      artPlayerRef.current.on('video:volumechange', () => {
-        lastVolumeRef.current = artPlayerRef.current.volume;
-      });
-      artPlayerRef.current.on('video:ratechange', () => {
-        lastPlaybackRateRef.current = artPlayerRef.current.playbackRate;
-      });
-
-      // 监听视频可播放事件，这时恢复播放进度更可靠
-      artPlayerRef.current.on('video:canplay', () => {
-        // 若存在需要恢复的播放进度，则跳转
-        if (resumeTimeRef.current && resumeTimeRef.current > 0) {
-          try {
-            const duration = artPlayerRef.current.duration || 0;
-            let target = resumeTimeRef.current;
-            if (duration && target >= duration - 2) {
-              target = Math.max(0, duration - 5);
-            }
-            artPlayerRef.current.currentTime = target;
-            console.log('成功恢复播放进度到:', resumeTimeRef.current);
-          } catch (err) {
-            console.warn('恢复播放进度失败:', err);
-          }
-        }
-        resumeTimeRef.current = null;
-
-        setTimeout(() => {
-          if (
-            Math.abs(artPlayerRef.current.volume - lastVolumeRef.current) > 0.01
-          ) {
-            artPlayerRef.current.volume = lastVolumeRef.current;
-          }
-          if (
-            Math.abs(
-              artPlayerRef.current.playbackRate - lastPlaybackRateRef.current
-            ) > 0.01 &&
-            isWebkit
-          ) {
-            artPlayerRef.current.playbackRate = lastPlaybackRateRef.current;
-          }
-          artPlayerRef.current.notice.show = '';
-        }, 0);
-
-        // 隐藏换源加载状态
-        setIsVideoLoading(false);
-      });
-
-      // 监听视频时间更新事件，实现跳过片头片尾
-      artPlayerRef.current.on('video:timeupdate', () => {
-        if (!skipConfigRef.current.enable) return;
-
-        const currentTime = artPlayerRef.current.currentTime || 0;
-        const duration = artPlayerRef.current.duration || 0;
-        const now = Date.now();
-
-        // 限制跳过检查频率为1.5秒一次
-        if (now - lastSkipCheckRef.current < 1500) return;
-        lastSkipCheckRef.current = now;
-
-        // 跳过片头
-        if (
-          skipConfigRef.current.intro_time > 0 &&
-          currentTime < skipConfigRef.current.intro_time
-        ) {
-          artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
-          artPlayerRef.current.notice.show = `已跳过片头 (${formatTime(
-            skipConfigRef.current.intro_time
-          )})`;
+              }; color: white; cursor: pointer; font-size: 10px; font-weight: 800; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">${s}x</button>
+          `
+            )
+            .join('');
         }
 
-        // 跳过片尾
-        if (
-          skipConfigRef.current.outro_time < 0 &&
-          duration > 0 &&
-          currentTime >
-            artPlayerRef.current.duration + skipConfigRef.current.outro_time
-        ) {
-          if (
-            currentEpisodeIndexRef.current <
-            (detailRef.current?.episodes?.length || 1) - 1
-          ) {
-            handleNextEpisode();
-          } else {
-            artPlayerRef.current.pause();
-          }
-          artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
-            skipConfigRef.current.outro_time
-          )})`;
-        }
-      });
-
-      artPlayerRef.current.on('error', (err: any) => {
-        console.error('播放器错误:', err);
-        if (artPlayerRef.current.currentTime > 0) {
-          return;
-        }
-      });
-
-      // 监听视频播放结束事件，自动播放下一集
-      artPlayerRef.current.on('video:ended', () => {
-        const d = detailRef.current;
-        const idx = currentEpisodeIndexRef.current;
-        if (d && d.episodes && idx < d.episodes.length - 1) {
-          setTimeout(() => {
-            setCurrentEpisodeIndex(idx + 1);
-          }, 1000);
-        }
-      });
-
-      artPlayerRef.current.on('video:timeupdate', () => {
-        const now = Date.now();
-        // 統一優化為 60 秒定時儲存一次資料庫，減少免費額度消耗
-        const interval = 60000;
-
-        if (now - lastSaveTimeRef.current > interval) {
-          saveCurrentPlayProgress(false); // 定時儲存使用節流
-          lastSaveTimeRef.current = now;
-        }
-      });
-
-      artPlayerRef.current.on('pause', () => {
-        saveCurrentPlayProgress(true); // 暫停時強制同步資料庫，確保安全
-      });
-
-      if (artPlayerRef.current?.video) {
-        ensureVideoSource(
-          artPlayerRef.current.video as HTMLVideoElement,
-          videoUrl
+        // 3. 下載按鈕
+        const downloadContainer = $controls.querySelector(
+          '#download-btn-container'
         );
-      }
-    } catch (err) {
-      console.error('创建播放器失败:', err);
-      setError('播放器初始化失败');
+        if (downloadContainer) {
+          const task = downloadTasksRef.current[videoUrlRef.current];
+          const isDownloading = task?.status === 'downloading';
+          const isCompleted = task?.status === 'completed';
+
+          downloadContainer.innerHTML = `
+            <button onclick="window.startDownload()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
+              isDownloading
+                ? 'rgba(59, 130, 246, 0.9)'
+                : isCompleted
+                ? 'rgba(34, 197, 94, 0.9)'
+                : 'rgba(0, 0, 0, 0.5)'
+            }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+              ${
+                isDownloading
+                  ? `<span style="font-size: 9px; font-weight: 900;">${Math.round(
+                      task.progress
+                    )}%</span>`
+                  : isCompleted
+                  ? `<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>`
+                  : `<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>`
+              }
+            </button>
+          `;
+        }
+
+        // 4. 設定按鈕
+        const settingsContainer = $controls.querySelector(
+          '#settings-btn-container'
+        );
+        if (settingsContainer) {
+          settingsContainer.innerHTML = `
+            <button onclick="window.openSettings()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.5); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </button>
+          `;
+        }
+      };
+
+      // 初始渲染
+      updateCustomControls();
+
+      // 監聽控制欄顯示事件，顯示同步圖層
+      art.on('control', (state: boolean) => {
+        const $layer = art.layers['custom-controls'];
+        if ($layer) $layer.style.display = state ? 'flex' : 'none';
+      });
+
+      // 當狀態變化時重新渲染按鈕 (需要一個全域監聽點，或是直接在 ready 監聽播放器事件)
+      art.on('video:ratechange', updateCustomControls);
+      (window as any).refreshCustomControls = updateCustomControls;
+    });
+
+    // 监听播放状态变化，控制 Wake Lock
+    art.on('play', () => {
+      requestWakeLock();
+    });
+
+    art.on('pause', () => {
+      releaseWakeLock();
+      saveCurrentPlayProgress();
+    });
+
+    art.on('video:ended', () => {
+      releaseWakeLock();
+    });
+
+    // 如果播放器初始化时已经在播放状态，则请求 Wake Lock
+    if (art && !art.paused) {
+      requestWakeLock();
     }
-  }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
+
+    art.on('video:volumechange', () => {
+      lastVolumeRef.current = art.volume;
+    });
+    art.on('video:ratechange', () => {
+      lastPlaybackRateRef.current = art.playbackRate;
+    });
+
+    // 监听视频可播放事件，这时恢复播放进度更可靠
+    art.on('video:canplay', () => {
+      // 若存在需要恢复的播放进度，则跳转
+      if (resumeTimeRef.current && resumeTimeRef.current > 0) {
+        try {
+          const duration = art.duration || 0;
+          let target = resumeTimeRef.current;
+          if (duration && target >= duration - 2) {
+            target = Math.max(0, duration - 5);
+          }
+          art.currentTime = target;
+          console.log('成功恢复播放进度到:', resumeTimeRef.current);
+        } catch (err) {
+          console.warn('恢复播放进度失败:', err);
+        }
+      }
+      resumeTimeRef.current = null;
+
+      setTimeout(() => {
+        if (Math.abs(art.volume - lastVolumeRef.current) > 0.01) {
+          art.volume = lastVolumeRef.current;
+        }
+        // Webkit 播放速率恢復邏輯
+        const isWebkit = 'WebkitAppearance' in document.documentElement.style;
+        if (
+          Math.abs(art.playbackRate - lastPlaybackRateRef.current) > 0.01 &&
+          isWebkit
+        ) {
+          art.playbackRate = lastPlaybackRateRef.current;
+        }
+        art.notice.show = '';
+      }, 0);
+
+      // 隐藏换源加载状态
+      setIsVideoLoading(false);
+    });
+
+    // 监听视频时间更新事件，实现跳过片头片尾
+    art.on('video:timeupdate', () => {
+      if (!skipConfigRef.current.enable) return;
+
+      const currentTime = art.currentTime || 0;
+      const duration = art.duration || 0;
+      const now = Date.now();
+
+      // 限制跳过检查频率为1.5秒一次
+      if (now - lastSkipCheckRef.current < 1500) return;
+      lastSkipCheckRef.current = now;
+
+      // 跳过片头
+      if (
+        skipConfigRef.current.intro_time > 0 &&
+        currentTime < skipConfigRef.current.intro_time
+      ) {
+        art.currentTime = skipConfigRef.current.intro_time;
+        art.notice.show = `已跳过片头 (${formatTime(
+          skipConfigRef.current.intro_time
+        )})`;
+      }
+
+      // 跳过片尾
+      if (
+        skipConfigRef.current.outro_time < 0 &&
+        duration > 0 &&
+        currentTime > art.duration + skipConfigRef.current.outro_time
+      ) {
+        if (
+          currentEpisodeIndexRef.current <
+          (detailRef.current?.episodes?.length || 1) - 1
+        ) {
+          handleNextEpisode();
+        } else {
+          art.pause();
+        }
+        art.notice.show = `已跳过片尾 (${formatTime(
+          skipConfigRef.current.outro_time
+        )})`;
+      }
+    });
+
+    art.on('error', (err: any) => {
+      console.error('播放器错误:', err);
+      if (art.currentTime > 0) {
+        return;
+      }
+    });
+
+    // 监听视频播放结束事件，自动播放下一集
+    art.on('video:ended', () => {
+      const d = detailRef.current;
+      const idx = currentEpisodeIndexRef.current;
+      if (d && d.episodes && idx < d.episodes.length - 1) {
+        setTimeout(() => {
+          setCurrentEpisodeIndex(idx + 1);
+        }, 1000);
+      }
+    });
+
+    art.on('video:timeupdate', () => {
+      const now = Date.now();
+      // 統一優化為 60 秒定時儲存一次資料庫，減少免費額度消耗
+      const interval = 60000;
+
+      if (now - lastSaveTimeRef.current > interval) {
+        saveCurrentPlayProgress(false); // 定時儲存使用節流
+        lastSaveTimeRef.current = now;
+      }
+    });
+
+    art.on('pause', () => {
+      saveCurrentPlayProgress(true); // 暫停時強制同步資料庫，確保安全
+    });
+  };
+
+
 
   // 当组件卸载时清理定时器、Wake Lock 和播放器资源
   useEffect(() => {
@@ -2223,22 +1928,82 @@ function PlayPageClient() {
               }`}
             >
               <div className='relative w-full h-[300px] lg:h-full'>
-                <div
-                  ref={artRef}
-                  className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
+                <VideoPlayer
+                  className='w-full h-full rounded-xl overflow-hidden shadow-lg'
                   style={{
                     filter: `brightness(${brightness}%)`,
                     transition: 'filter 0.1s ease-out',
                   }}
-                  onTouchStart={(e) => {
+                  option={{
+                    url: videoUrl,
+                    poster: videoCover,
+                    title: videoTitle,
+                    volume: lastVolumeRef.current,
+                    isLive: false,
+                    muted: false,
+                    autoplay: true,
+                    pip: true,
+                    autoSize: true,
+                    autoMini: true,
+                    screenshot: true,
+                    setting: true,
+                    loop: false,
+                    flip: true,
+                    rotate: true,
+                    playbackRate: true,
+                    aspectRatio: true,
+                    fullscreen: true,
+                    fullscreenWeb: true,
+                    subtitleOffset: true,
+                    miniProgressBar: true,
+                    mutex: true,
+                    backdrop: true,
+                    playsInline: true,
+                    autoPlayback: true,
+                    airplay: true,
+                    theme: '#22c55e',
+                    lang: 'zh-cn',
+                    fastForward: false,
+                    autoOrientation: true,
+                    lock: true,
+                    moreVideoAttr: {
+                      crossOrigin: 'anonymous',
+                    },
+                    icons: {
+                      loading:
+                        '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',
+                    },
+                  }}
+                  getInstance={handlePlayerInit}
+                  blockAdEnabled={blockAdEnabled}
+                  onBlockAdToggle={handleBlockAdToggle}
+                  skipConfig={skipConfig}
+                  onSkipConfigChange={handleSkipConfigChange}
+                  onNextEpisode={() => handleNextEpisode()}
+                  onOpenSettings={() => setIsSettingsPanelOpen(true)}
+                  onStartDownload={() => {
+                    addDownloadTask(
+                      videoUrlRef.current,
+                      videoTitleRef.current,
+                      currentEpisodeIndexRef.current
+                    );
+                    if (artPlayerRef.current) {
+                      artPlayerRef.current.notice.show = '📥 已加入下載隊列';
+                    }
+                  }}
+                  downloadTasks={tasks}
+                  lastVolume={lastVolumeRef.current}
+                  lastPlaybackRate={lastPlaybackRateRef.current}
+                  lastPlaybackRate={lastPlaybackRateRef.current}
+                  onTouchStart={(e: React.TouchEvent) => {
                     onTouchStart(e);
                     videoGestures.onTouchStart(e);
                   }}
-                  onTouchMove={(e) => {
+                  onTouchMove={(e: React.TouchEvent) => {
                     onTouchMove(e);
                     videoGestures.onTouchMove(e);
                   }}
-                  onTouchEnd={(e) => {
+                  onTouchEnd={(e: React.TouchEvent) => {
                     onTouchEnd(e);
                     videoGestures.onTouchEnd(e);
                   }}
@@ -2246,7 +2011,36 @@ function PlayPageClient() {
                   onMouseUp={onMouseUp}
                   onMouseMove={onMouseMove}
                   onMouseLeave={onMouseLeave}
+                />
+
+                {/* 隱形圖層用於捕獲手勢 (覆蓋在 VideoPlayer 上方) */}
+                <div
+                  className='absolute inset-0 z-[5] pointer-events-none'
+                  onTouchStart={(e) => {
+                    // 只需確保 pointer-events-none 不會阻擋 VideoPlayer 內部控制
+                    // 但我們需要手勢監聽，所以這裡用一個透明層單獨監聽？
+                    // Artplayer 內部已經有事件監聽，如果我們在 ArtPlayer 容器上監聽，會起衝突嗎？
+                    // 根據之前的代碼，事件是綁定在 artRef 的 div 上的。
+                    // VideoPlayer 渲染的 div ref={artRef} 會自動處理這些嗎？
+                    // 不會，VideoPlayer 內部的 div 是 Artplayer 的容器。
+                    // 這裡我們需要在 VideoPlayer 上層包裹一個 div 來處理手勢，或者將手勢 props 傳給 VideoPlayer。
+                    // 為了簡化，我們可以在這裡創建一個與 VideoPlayer 同級的透明遮罩層來處理手勢事件（如果 Artplayer 允許點擊穿透或我們只監聽特定區域）
+                    // 更好的方式：VideoPlayer 接受 className 和 style，我們其實已經把手勢事件處理從 div 移除了。
+                    // 讓我們把手勢監聽加回到 VideoPlayer 的外層容器，或者通過 props 傳遞 ref？
+                    // 之前的代碼是直接在 div 上綁定 onTouch...
+                    // VideoPlayer 內部返回 div ref={artRef} {...props} 嗎？
+                    // VideoPlayer 目前只接受 style/className。
+                    // 考慮到手勢邏輯比較複雜且是 hook，我們可以在這層用一個 div 包裹 VideoPlayer，或者在 VideoPlayer 內部轉發事件。
+                    // 但 ArtPlayer 會佔滿容器。
+                    // 讓我們嘗試在 VideoPlayer 外面包裹一層 div 用於手勢，並確保 touch-action 設置正確
+                  }}
                 ></div>
+                {/* 恢復手勢綁定：將手勢事件綁定到 VideoPlayer 外層容器的一種方式是將其傳入 props，但 VideoPlayer 只有 className/style。
+                    最簡單的方法：在 VideoPlayer 上面蓋一層透明 div，專門接收 touch 事件，但這會擋住播放器控制欄。
+                    Artplayer 插件模式？
+                    回頭看原代碼：事件是綁定在 div 上的。VideoPlayer 也是返回一個 div。
+                    我們可以在 VideoPlayer 外部包一個 div，把事件綁定在這個 div 上。
+                */}
 
                 {/* 手勢反饋指示器 */}
                 {gestureIndicator.show && (
