@@ -18,6 +18,7 @@ import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
+import Prewarmer from '@/components/Prewarmer';
 import VideoCard from '@/components/VideoCard';
 
 function DoubanPageClient() {
@@ -31,6 +32,7 @@ function DoubanPageClient() {
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<Record<string, boolean>>({});
 
   // 用于存储最新参数值的 refs
   const currentParamsRef = useRef({
@@ -245,6 +247,33 @@ function DoubanPageClient() {
     },
     [type, primarySelection, secondarySelection]
   );
+
+  // 批量檢查快取狀態
+  const checkBatchCache = async (items: DoubanItem[]) => {
+    if (items.length === 0) return;
+    try {
+      const res = await fetch('/api/admin/cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map((it) => ({ title: it.title, year: it.year })),
+        }),
+      });
+      const data = await res.json();
+      if (data.results) {
+        setCacheStatus((prev) => ({ ...prev, ...data.results }));
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  };
+
+  // 當數據加載後觸發檢查
+  useEffect(() => {
+    if (doubanData.length > 0) {
+      checkBatchCache(doubanData);
+    }
+  }, [doubanData]);
 
   // 防抖的数据加载函数
   const loadInitialData = useCallback(async () => {
@@ -772,6 +801,7 @@ function DoubanPageClient() {
                       isBangumi={
                         type === 'anime' && primarySelection === '每日放送'
                       }
+                      isCached={cacheStatus[`${item.title}_${item.year || ''}`]}
                     />
                   </div>
                 ))}
@@ -809,6 +839,9 @@ function DoubanPageClient() {
           )}
         </div>
       </div>
+
+      {/* 管理員專用：預熱當前列表資源 */}
+      <Prewarmer items={doubanData} />
     </PageLayout>
   );
 }

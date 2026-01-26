@@ -239,6 +239,30 @@ export class DbManager {
       throw new Error('存储类型不支持清空数据操作');
     }
   }
+
+  async get(_userName: string, _key: string): Promise<any | null> {
+    if (typeof this.storage.get === 'function') {
+      return this.storage.get(_userName, _key);
+    }
+    return null;
+  }
+
+  async set(
+    userName: string,
+    key: string,
+    value: any,
+    ttl?: number
+  ): Promise<void> {
+    if (typeof this.storage.set === 'function') {
+      await this.storage.set(userName, key, value, ttl);
+    }
+  }
+
+  async delete(userName: string, key: string): Promise<void> {
+    if (typeof this.storage.delete === 'function') {
+      await this.storage.delete(userName, key);
+    }
+  }
 }
 
 // 导出默认实例

@@ -23,6 +23,7 @@ import { DoubanItem } from '@/lib/types';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
+import Prewarmer from '@/components/Prewarmer';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
@@ -37,6 +38,7 @@ function HomeClient() {
   >([]);
   const [loading, setLoading] = useState(true);
   const { announcement } = useSite();
+  const [cacheStatus, setCacheStatus] = useState<Record<string, boolean>>({});
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
@@ -67,6 +69,26 @@ function HomeClient() {
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
 
+  // 批量檢查快取狀態
+  const checkBatchCache = async (items: DoubanItem[]) => {
+    if (items.length === 0) return;
+    try {
+      const res = await fetch('/api/admin/cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map((it) => ({ title: it.title, year: it.year })),
+        }),
+      });
+      const data = await res.json();
+      if (data.results) {
+        setCacheStatus((prev) => ({ ...prev, ...data.results }));
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     const fetchRecommendData = async () => {
       try {
@@ -87,14 +109,17 @@ function HomeClient() {
 
         if (moviesData.code === 200) {
           setHotMovies(moviesData.list);
+          checkBatchCache(moviesData.list);
         }
 
         if (tvShowsData.code === 200) {
           setHotTvShows(tvShowsData.list);
+          checkBatchCache(tvShowsData.list);
         }
 
         if (varietyShowsData.code === 200) {
           setHotVarietyShows(varietyShowsData.list);
+          checkBatchCache(varietyShowsData.list);
         }
 
         setBangumiCalendarData(bangumiCalendarData);
@@ -268,6 +293,9 @@ function HomeClient() {
                             rate={movie.rate}
                             year={movie.year}
                             type='movie'
+                            isCached={
+                              cacheStatus[`${movie.title}_${movie.year || ''}`]
+                            }
                           />
                         </div>
                       ))}
@@ -315,6 +343,9 @@ function HomeClient() {
                             douban_id={Number(show.id)}
                             rate={show.rate}
                             year={show.year}
+                            isCached={
+                              cacheStatus[`${show.title}_${show.year || ''}`]
+                            }
                           />
                         </div>
                       ))}
@@ -437,6 +468,9 @@ function HomeClient() {
                             douban_id={Number(show.id)}
                             rate={show.rate}
                             year={show.year}
+                            isCached={
+                              cacheStatus[`${show.title}_${show.year || ''}`]
+                            }
                           />
                         </div>
                       ))}
@@ -446,6 +480,10 @@ function HomeClient() {
           )}
         </div>
       </div>
+
+      {/* 管理員專用：預熱當前熱門資源 */}
+      <Prewarmer items={[...hotMovies, ...hotTvShows, ...hotVarietyShows]} />
+
       {announcement && showAnnouncement && (
         <div
           className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm dark:bg-black/70 p-4 transition-opacity duration-300 ${

@@ -364,6 +364,31 @@ export class UpstashRedisStorage implements IStorage {
       throw new Error('清空数据失败');
     }
   }
+
+  // ---------- 通用鍵值存取 (快取等使用) ----------
+  async get(userName: string, key: string): Promise<any | null> {
+    const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
+    return withRetry(() => this.client.get(fullKey));
+  }
+
+  async set(
+    userName: string,
+    key: string,
+    value: any,
+    ttl?: number
+  ): Promise<void> {
+    const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
+    if (ttl) {
+      await withRetry(() => this.client.set(fullKey, value, { ex: ttl }));
+    } else {
+      await withRetry(() => this.client.set(fullKey, value));
+    }
+  }
+
+  async delete(userName: string, key: string): Promise<void> {
+    const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
+    await withRetry(() => this.client.del(fullKey));
+  }
 }
 
 // 单例 Upstash Redis 客户端

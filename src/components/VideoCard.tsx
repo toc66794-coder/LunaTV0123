@@ -54,6 +54,7 @@ export interface VideoCardProps {
   isBangumi?: boolean;
   isAggregate?: boolean;
   origin?: 'vod' | 'live';
+  isCached?: boolean;
 }
 
 export type VideoCardHandle = {
@@ -84,6 +85,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       isBangumi = false,
       isAggregate = false,
       origin = 'vod',
+      isCached = false,
     }: VideoCardProps,
     ref
   ) {
@@ -628,6 +630,18 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               return false;
             }}
           >
+            {/* 秒開快取標記 */}
+            {isCached && (
+              <div
+                className={`absolute ${
+                  config.showYear && year ? 'top-10' : 'top-2'
+                } left-2 z-[20] flex items-center gap-1 bg-green-500/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-lg backdrop-blur-sm animate-pulse`}
+                title='此資源已預熱，點擊秒開'
+              >
+                <Radio size={12} className='animate-pulse' />
+                <span>秒開</span>
+              </div>
+            )}
             {/* 骨架屏 */}
             {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
             {/* 图片 */}

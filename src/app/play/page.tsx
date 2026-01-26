@@ -8,6 +8,7 @@ import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
+import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import {
   deleteFavorite,
   deleteSkipConfig,
@@ -852,7 +853,42 @@ function PlayPageClient() {
           : '🔍 正在搜索播放源...'
       );
 
-      let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
+      // --- 1. 快取劫持邏輯 (Cache Hijack) ---
+      let cachedDetail: SearchResult | null = null;
+      if (!currentSource || !currentId || needPreferRef.current) {
+        try {
+          const cacheTitle = searchTitle || videoTitle;
+          const cacheYear = videoYear || '';
+          if (cacheTitle) {
+            const cacheRes = await fetch(
+              `/api/admin/cache?title=${encodeURIComponent(
+                cacheTitle
+              )}&year=${cacheYear}`
+            );
+            const cacheData = await cacheRes.json();
+            if (cacheData.hit) {
+              console.log('[Cache] Hit!', cacheData.data);
+              // 獲取快取源的完整詳情
+              const detailRes = await fetch(
+                `/api/detail?source=${cacheData.data.source}&id=${cacheData.data.id}`
+              );
+              if (detailRes.ok) {
+                cachedDetail = (await detailRes.json()) as SearchResult;
+                setLoadingMessage('🚀 正在使用秒開快取來源...');
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Cache] Hijack failed', e);
+        }
+      }
+
+      let sourcesInfo: SearchResult[] = [];
+      if (cachedDetail) {
+        sourcesInfo = [cachedDetail];
+      } else {
+        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
+      }
       if (
         currentSource &&
         currentId &&
@@ -892,6 +928,29 @@ function PlayPageClient() {
         setLoadingMessage('⚡ 正在优选最佳播放源...');
 
         detailData = await preferBestSource(sourcesInfo);
+
+        // --- 2. 自動預熱沈澱 (Auto Pre-warm) ---
+        // 如果是管理員，且剛才沒有命中快取，自動沈澱到 Upstash
+        const auth = getAuthInfoFromBrowserCookie();
+        const isAdmin = auth?.role === 'owner' || auth?.role === 'admin';
+        if (isAdmin && !cachedDetail) {
+          try {
+            fetch('/api/admin/cache', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: searchTitle || videoTitle,
+                year: videoYear,
+                source: detailData.source,
+                id: detailData.id,
+                source_name: detailData.source_name,
+              }),
+            });
+            console.log('[Cache] Pre-warm data saved');
+          } catch (e) {
+            /* ignore */
+          }
+        }
       }
 
       console.log(detailData.source, detailData.id);

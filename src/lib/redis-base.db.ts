@@ -490,4 +490,31 @@ export abstract class BaseRedisStorage implements IStorage {
       throw new Error('清空数据失败');
     }
   }
+
+  // ---------- 通用鍵值存取 (快取等使用) ----------
+  async get(userName: string, key: string): Promise<any | null> {
+    const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
+    const val = await this.withRetry(() => this.client.get(fullKey));
+    return val ? JSON.parse(val) : null;
+  }
+
+  async set(
+    userName: string,
+    key: string,
+    value: any,
+    ttl?: number
+  ): Promise<void> {
+    const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
+    const valStr = JSON.stringify(value);
+    if (ttl) {
+      await this.withRetry(() => this.client.set(fullKey, valStr, { EX: ttl }));
+    } else {
+      await this.withRetry(() => this.client.set(fullKey, valStr));
+    }
+  }
+
+  async delete(userName: string, key: string): Promise<void> {
+    const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
+    await this.withRetry(() => this.client.del(fullKey));
+  }
 }
