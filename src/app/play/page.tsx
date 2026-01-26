@@ -1450,7 +1450,6 @@ function PlayPageClient() {
                 <!-- 這些按鈕會由初始化後的腳本動動態更新狀態 -->
                 <div id="ad-btn-container"></div>
                 <div id="speed-btns-container" style="display: flex; gap: 4px;"></div>
-                <div id="skip-btn-container"></div>
                 <div id="download-btn-container"></div>
                 <div id="settings-btn-container"></div>
               </div>
@@ -1640,12 +1639,6 @@ function PlayPageClient() {
         // --- 全域函數綁定 (橋接 React 到原生 DOM) ---
         (window as any).toggleAdBlock = () => handleBlockAdToggle();
         (window as any).setPlaySpeed = (s: number) => handleSpeedChange(s);
-        (window as any).toggleSkip = () => {
-          handleSkipConfigChange({
-            ...skipConfigRef.current,
-            enable: !skipConfigRef.current.enable,
-          });
-        };
         (window as any).openSettings = () => setIsSettingsPanelOpen(true);
         (window as any).startDownload = () => {
           addDownloadTask(
@@ -1670,13 +1663,12 @@ function PlayPageClient() {
           // 1. 去廣告按鈕
           const adContainer = $controls.querySelector('#ad-btn-container');
           if (adContainer) {
+            const enabled = blockAdEnabledRef.current;
             adContainer.innerHTML = `
-              <button onclick="window.toggleAdBlock()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
-                blockAdEnabledRef.current
-                  ? 'rgba(34, 197, 94, 0.8)'
-                  : 'rgba(107, 114, 128, 0.7)'
-              }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+              <button onclick="window.toggleAdBlock()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
+                enabled ? 'rgba(34, 197, 94, 0.9)' : 'rgba(107, 114, 128, 0.7)'
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.744c0 5.273 3.69 9.689 8.602 10.71a11.99 11.99 0 008.602-10.71c0-1.299-.206-2.55-.586-3.725A12.147 12.147 0 0112 2.714z"/></svg>
               </button>
             `;
           }
@@ -1686,30 +1678,46 @@ function PlayPageClient() {
             '#speed-btns-container'
           );
           if (speedContainer) {
-            const speeds = [0.5, 0.75, 1, 1.5, 2, 3];
+            const speeds = [0.5, 1, 1.5, 2, 3]; // 稍微精簡速度選項使 UI 不擁擠
             speedContainer.innerHTML = speeds
               .map(
                 (s) => `
-              <button onclick="window.setPlaySpeed(${s})" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
+              <button onclick="window.setPlaySpeed(${s})" style="width: 34px; height: 32px; border-radius: 16px; border: none; background: ${
                   lastPlaybackRateRef.current === s
-                    ? 'rgba(59, 130, 246, 0.8)'
-                    : 'rgba(0, 0, 0, 0.6)'
-                }; color: white; cursor: pointer; font-size: 11px; font-weight: bold; backdrop-filter: blur(4px); transition: all 0.2s;">${s}x</button>
+                    ? 'rgba(59, 130, 246, 0.9)'
+                    : 'rgba(0, 0, 0, 0.5)'
+                }; color: white; cursor: pointer; font-size: 10px; font-weight: 800; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">${s}x</button>
             `
               )
               .join('');
           }
 
-          // 3. 跳過片頭按鈕
-          const skipContainer = $controls.querySelector('#skip-btn-container');
-          if (skipContainer) {
-            skipContainer.innerHTML = `
-              <button onclick="window.toggleSkip()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
-                skipConfigRef.current.enable
-                  ? 'rgba(34, 197, 94, 0.8)'
-                  : 'rgba(107, 114, 128, 0.7)'
-              }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+          // 3. 下載按鈕
+          const downloadContainer = $controls.querySelector(
+            '#download-btn-container'
+          );
+          if (downloadContainer) {
+            const task = downloadTasksRef.current[videoUrlRef.current];
+            const isDownloading = task?.status === 'downloading';
+            const isCompleted = task?.status === 'completed';
+
+            downloadContainer.innerHTML = `
+              <button onclick="window.startDownload()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
+                isDownloading
+                  ? 'rgba(59, 130, 246, 0.9)'
+                  : isCompleted
+                  ? 'rgba(34, 197, 94, 0.9)'
+                  : 'rgba(0, 0, 0, 0.5)'
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+                ${
+                  isDownloading
+                    ? `<span style="font-size: 9px; font-weight: 900;">${Math.round(
+                        task.progress
+                      )}%</span>`
+                    : isCompleted
+                    ? `<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>`
+                    : `<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>`
+                }
               </button>
             `;
           }
@@ -1720,38 +1728,8 @@ function PlayPageClient() {
           );
           if (settingsContainer) {
             settingsContainer.innerHTML = `
-              <button onclick="window.openSettings()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.6); color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-              </button>
-            `;
-          }
-
-          // 5. 下載按鈕
-          const downloadContainer = $controls.querySelector(
-            '#download-btn-container'
-          );
-          if (downloadContainer) {
-            const task = downloadTasksRef.current[videoUrlRef.current];
-            const isDownloading = task?.status === 'downloading';
-            const isCompleted = task?.status === 'completed';
-
-            downloadContainer.innerHTML = `
-              <button onclick="window.startDownload()" style="width: 38px; height: 38px; border-radius: 50%; border: none; background: ${
-                isDownloading
-                  ? 'rgba(59, 130, 246, 0.8)'
-                  : isCompleted
-                  ? 'rgba(34, 197, 94, 0.8)'
-                  : 'rgba(0, 0, 0, 0.6)'
-              }; color: white; cursor: pointer; display: flex; align-items: center; justify-center: center; backdrop-filter: blur(4px); transition: all 0.2s;">
-                ${
-                  isDownloading
-                    ? `<span style="font-size: 10px; font-weight: bold;">${Math.round(
-                        task.progress
-                      )}%</span>`
-                    : isCompleted
-                    ? `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`
-                    : `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>`
-                }
+              <button onclick="window.openSettings()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.5); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
               </button>
             `;
           }
