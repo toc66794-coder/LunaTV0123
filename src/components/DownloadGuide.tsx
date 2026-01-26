@@ -12,12 +12,24 @@ export default function DownloadGuide({
   videoTitle,
 }: DownloadGuideProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState(false);
 
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(m3u8Url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('複製失敗:', error);
+    }
+  };
+
+  const copyFullCommand = async () => {
+    try {
+      const command = `N_m3u8DL-CLI "${m3u8Url}" --workDir "./Downloads" --saveName "${videoTitle}"`;
+      await navigator.clipboard.writeText(command);
+      setCopiedCommand(true);
+      setTimeout(() => setCopiedCommand(false), 2000);
     } catch (error) {
       console.error('複製失敗:', error);
     }
@@ -35,17 +47,29 @@ export default function DownloadGuide({
         </code>
       </div>
 
-      {/* 複製按鈕 */}
-      <button
-        onClick={copyLink}
-        className={`w-full py-3 rounded-lg font-semibold transition-all ${
-          copied
-            ? 'bg-green-500 text-white'
-            : 'bg-blue-500 hover:bg-blue-600 text-white'
-        }`}
-      >
-        {copied ? '✅ 已複製到剪貼板' : '📋 複製下載連結'}
-      </button>
+      {/* 複製按鈕組 */}
+      <div className='grid grid-cols-2 gap-2'>
+        <button
+          onClick={copyLink}
+          className={`py-3 rounded-lg font-semibold transition-all text-sm ${
+            copied
+              ? 'bg-green-500 text-white'
+              : 'bg-gray-500 hover:bg-gray-600 text-white'
+          }`}
+        >
+          {copied ? '✅ 已複製' : '📋 複製連結'}
+        </button>
+        <button
+          onClick={copyFullCommand}
+          className={`py-3 rounded-lg font-semibold transition-all text-sm ${
+            copiedCommand
+              ? 'bg-green-500 text-white'
+              : 'bg-blue-500 hover:bg-blue-600 text-white'
+          }`}
+        >
+          {copiedCommand ? '✅ 已複製' : '⚡ 複製完整命令'}
+        </button>
+      </div>
 
       {/* 推薦工具 */}
       <div className='text-sm space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4'>
