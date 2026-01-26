@@ -2,7 +2,6 @@
 'use client';
 
 import Artplayer from 'artplayer';
-import Hls from 'hls.js';
 import { useEffect, useRef } from 'react';
 import React from 'react';
 
@@ -82,45 +81,6 @@ export default function VideoPlayer({
 
   // 去廣告過濾函數
   function filterAdsFromM3U8(m3u8Content: string): string {
-    if (!m3u8Content) return '';
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
-      }
-    }
-    return filteredLines.join('\n');
-  }
-
-  // 自定義 HLS Loader
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-    constructor(config: any) {
-      super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
-        ) {
-          const onSuccess = callbacks.onSuccess;
-          callbacks.onSuccess = function (
-            response: any,
-            stats: any,
-            context: any
-          ) {
-            if (response.data && typeof response.data === 'string') {
-              response.data = filterAdsFromM3U8(response.data);
-            }
-            return onSuccess(response, stats, context, null);
-          };
-        }
-        load(context, config, callbacks);
-      };
-    }
-  }
-
   useEffect(() => {
     if (!artRef.current) return;
 
@@ -129,14 +89,53 @@ export default function VideoPlayer({
       ...option,
       container: artRef.current,
       customType: {
-        m3u8: function (video: HTMLVideoElement, url: string) {
+        m3u8: async function (video: HTMLVideoElement, url: string) {
+          // 動態導入 Hls.js 以進一步優化分卷大小
+          const { default: Hls } = await import('hls.js');
+
           if (!Hls) {
-            console.error('HLS.js 未加载');
+            console.error('HLS.js 加載失敗');
             return;
           }
           if (video.hls) {
             video.hls.destroy();
           }
+
+          // 如果啟用了去廣告，定義自定義 Loader
+          let hlsLoader = Hls.DefaultConfig.loader;
+          if (blockAdEnabled) {
+            class CustomHlsJsLoader extends (Hls.DefaultConfig.loader as any) {
+              constructor(config: any) {
+                super(config);
+                const load = this.load.bind(this);
+                this.load = function (context: any, config: any, callbacks: any) {
+                  if (
+                    context.type === 'manifest' ||
+                    context.type === 'level'
+                  ) {
+                    const onSuccess = callbacks.onSuccess;
+                    callbacks.onSuccess = function (
+                      response: any,
+                      stats: any,
+                      context: any
+                    ) {
+                      if (response.data && typeof response.data === 'string') {
+                        // 移除廣告分段
+                        response.data = response.data
+                          .split('\n')
+                          .filter((line: string) => !line.includes('#EXT-X-DISCONTINUITY'))
+                          .join('\n');
+                      }
+                      return onSuccess(response, stats, context, null);
+                    };
+                  }
+                  load(context, config, callbacks);
+                };
+              }
+            }
+            hlsLoader = CustomHlsJsLoader as any;
+          }
+
           const hls = new Hls({
             debug: false,
             enableWorker: true,
@@ -144,16 +143,22 @@ export default function VideoPlayer({
             maxBufferLength: 30,
             backBufferLength: 30,
             maxBufferSize: 60 * 1000 * 1000,
-            loader: blockAdEnabledRef.current
-              ? CustomHlsJsLoader
-              : Hls.DefaultConfig.loader,
+            loader: hlsLoader,
           });
           hls.loadSource(url);
           hls.attachMedia(video);
           video.hls = hls; // 綁定 hls 實例以便後續銷毀
 
           // 確保 video 標籤有 src (AirPlay)
-          ensureVideoSource(video, url);
+          if (!video.querySelector('source')) {
+            const source = document.createElement('source');
+            source.src = url;
+            video.appendChild(source);
+          }
+          video.disableRemotePlayback = false;
+          if (video.hasAttribute('disableRemotePlayback')) {
+            video.removeAttribute('disableRemotePlayback');
+          }
 
           hls.on(Hls.Events.ERROR, function (event: any, data: any) {
             if (data.fatal) {
