@@ -1080,6 +1080,13 @@ function PlayPageClient() {
         requestWakeLock();
       }
 
+      // 自動進入全螢幕
+      setTimeout(() => {
+        if (art && !art.fullscreen) {
+          art.fullscreen = true;
+        }
+      }, 100);
+
       // --- 全域函數綁定 (橋接 React 到原生 DOM) ---
       (window as any).toggleAdBlock = () => handleBlockAdToggle();
       (window as any).setPlaySpeed = (s: number) => handleSpeedChange(s);
