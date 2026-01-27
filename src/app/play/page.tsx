@@ -1080,13 +1080,6 @@ function PlayPageClient() {
         requestWakeLock();
       }
 
-      // 自動進入全螢幕
-      setTimeout(() => {
-        if (art && !art.fullscreen) {
-          art.fullscreen = true;
-        }
-      }, 100);
-
       // --- 全域函數綁定 (橋接 React 到原生 DOM) ---
       (window as any).toggleAdBlock = () => handleBlockAdToggle();
       (window as any).setPlaySpeed = (s: number) => handleSpeedChange(s);
@@ -1260,6 +1253,17 @@ function PlayPageClient() {
 
       // 隐藏换源加载状态
       setIsVideoLoading(false);
+
+      // 自動進入全螢幕（延遲以確保播放器完全就緒）
+      setTimeout(() => {
+        if (art && !art.fullscreen) {
+          try {
+            art.fullscreen = true;
+          } catch (err) {
+            console.warn('自動全螢幕失敗:', err);
+          }
+        }
+      }, 300);
     });
 
     // 监听视频时间更新事件，实现跳过片头片尾

@@ -453,7 +453,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }
 
         // 如果還在長按計時中且移動明顯，取消計時器
-        if (longPressTimer && (deltaX > 20 || deltaY > 20)) {
+        if (longPressTimer && (deltaX > 40 || deltaY > 40)) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
