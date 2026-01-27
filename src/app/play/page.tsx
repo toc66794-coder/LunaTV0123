@@ -1321,8 +1321,23 @@ function PlayPageClient() {
       const d = detailRef.current;
       const idx = currentEpisodeIndexRef.current;
       if (d && d.episodes && idx < d.episodes.length - 1) {
+        // 保存全螢幕狀態
+        const wasFullscreen = art.fullscreen;
+
         setTimeout(() => {
           setCurrentEpisodeIndex(idx + 1);
+
+          // 如果之前是全螢幕，在新影片準備好後恢復全螢幕
+          if (wasFullscreen) {
+            // 等待新影片加載並準備好
+            const restoreFullscreen = () => {
+              if (art && art.fullscreen !== wasFullscreen) {
+                art.fullscreen = wasFullscreen;
+              }
+            };
+            // 延遲恢復以確保影片已加載
+            setTimeout(restoreFullscreen, 500);
+          }
         }, 1000);
       }
     });
@@ -1620,7 +1635,7 @@ function PlayPageClient() {
                     fullscreenWeb: true,
                     fastForward: false,
                     subtitleOffset: true,
-                    miniProgressBar: true,
+                    miniProgressBar: false,
                     mutex: true,
                     backdrop: true,
                     playsInline: true,

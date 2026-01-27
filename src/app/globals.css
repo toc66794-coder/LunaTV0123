@@ -153,6 +153,17 @@ div[data-media-provider] video {
   object-fit: contain;
 }
 
+/* ArtPlayer 容器垂直置中 */
+.art-video-player {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.art-video-player video {
+  object-fit: contain !important;
+}
+
 .art-poster {
   background-size: contain !important; /* 使图片完整展示 */
   background-position: center center !important; /* 居中显示 */
