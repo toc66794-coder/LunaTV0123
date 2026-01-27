@@ -470,56 +470,98 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           return; // 移動太小，不處理
         }
 
-        // 水平移動佔優：讓 ArtPlayer 處理進度調整
-        if (deltaX > deltaY && deltaX > minMoveThreshold) {
-          if (activeGestureMode === 'none') {
-            activeGestureMode = 'seeking';
+        // 如果已經進入某個模式，持續該模式（鎖定方向）
+        if (activeGestureMode === 'seeking') {
+          // 已經在水平滑動模式，繼續
+          return;
+        }
+
+        if (activeGestureMode === 'adjusting') {
+          // 已經在垂直調整模式，繼續執行
+          if (e.cancelable) e.preventDefault();
+
+          const yChange = startY - currentY;
+          const xPercent = startX / rect.width;
+
+          if (xPercent < 0.3) {
+            // 左側：亮度調整
+            const change = yChange * 0.8;
+            if (art.video) {
+              const current =
+                art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
+                '100';
+              const next = Math.max(
+                50,
+                Math.min(200, parseInt(current) + change)
+              );
+              art.video.style.filter = `brightness(${next}%)`;
+              art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
+            }
+          } else if (xPercent > 0.7) {
+            // 右側：音量調整
+            const volumeChange = yChange * 0.005;
+            const newVolume = Math.max(
+              0,
+              Math.min(1, art.volume + volumeChange)
+            );
+            art.volume = newVolume;
+            art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
           }
+
+          startY = currentY; // 更新起點，實現連續調整
+          return;
+        }
+
+        // 首次判定方向（使用容差比例，允許傾斜）
+        const horizontalTolerance = 0.6; // 水平優先需要 deltaX > deltaY * 1.67
+        const verticalTolerance = 0.6; // 垂直優先需要 deltaY > deltaX * 1.67
+
+        // 判定為水平：deltaX 明顯大於 deltaY
+        if (
+          deltaX > deltaY / horizontalTolerance &&
+          deltaX > minMoveThreshold
+        ) {
+          activeGestureMode = 'seeking';
           // 不 preventDefault，讓 ArtPlayer 的原生手勢處理
           return;
         }
 
-        // 垂直移動佔優：自定義亮度/音量調整
-        if (deltaY > deltaX && deltaY > minMoveThreshold) {
-          // 首次進入調整模式
-          if (activeGestureMode === 'none') {
-            activeGestureMode = 'adjusting';
-          }
+        // 判定為垂直：deltaY 明顯大於 deltaX（允許一定傾斜）
+        if (deltaY > deltaX / verticalTolerance && deltaY > minMoveThreshold) {
+          activeGestureMode = 'adjusting';
+          // 立即執行第一次調整
+          if (e.cancelable) e.preventDefault();
 
-          // 執行調整邏輯
-          if (activeGestureMode === 'adjusting') {
-            if (e.cancelable) e.preventDefault();
+          const yChange = startY - currentY;
+          const xPercent = startX / rect.width;
 
-            const yChange = startY - currentY;
-            const xPercent = startX / rect.width;
-
-            if (xPercent < 0.3) {
-              // 左側：亮度調整
-              const change = yChange * 0.8;
-              if (art.video) {
-                const current =
-                  art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
-                  '100';
-                const next = Math.max(
-                  50,
-                  Math.min(200, parseInt(current) + change)
-                );
-                art.video.style.filter = `brightness(${next}%)`;
-                art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
-              }
-            } else if (xPercent > 0.7) {
-              // 右側：音量調整
-              const volumeChange = yChange * 0.005;
-              const newVolume = Math.max(
-                0,
-                Math.min(1, art.volume + volumeChange)
+          if (xPercent < 0.3) {
+            // 左側：亮度調整
+            const change = yChange * 0.8;
+            if (art.video) {
+              const current =
+                art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
+                '100';
+              const next = Math.max(
+                50,
+                Math.min(200, parseInt(current) + change)
               );
-              art.volume = newVolume;
-              art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
+              art.video.style.filter = `brightness(${next}%)`;
+              art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
             }
-
-            startY = currentY; // 更新起點，實現連續調整
+          } else if (xPercent > 0.7) {
+            // 右側：音量調整
+            const volumeChange = yChange * 0.005;
+            const newVolume = Math.max(
+              0,
+              Math.min(1, art.volume + volumeChange)
+            );
+            art.volume = newVolume;
+            art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
           }
+
+          startY = currentY;
+          return;
         }
       };
 
