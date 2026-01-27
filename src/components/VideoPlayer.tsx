@@ -568,6 +568,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           art.notice.show = '';
           activeGestureMode = 'none';
           lastTapTime = 0;
+          lastTapSide = null;
           return;
         }
 
@@ -578,6 +579,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         ) {
           activeGestureMode = 'none';
           lastTapTime = 0;
+          lastTapSide = null;
           return;
         }
 
