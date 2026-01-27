@@ -445,16 +445,10 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         const deltaX = Math.abs(currentX - startX);
         const deltaY = Math.abs(currentY - startY);
 
-        // 如果已經在長按模式，阻止任何移動
+        // 如果已經在長按模式，完全鎖定（不允許任何其他手勢）
         if (activeGestureMode === 'longpress') {
           if (e.cancelable) e.preventDefault();
-          // 如果移動太多，取消長按
-          if (deltaX > 50 || deltaY > 50) {
-            if (longPressTimer) clearTimeout(longPressTimer);
-            art.playbackRate = speedBeforeLongPress;
-            art.notice.show = '';
-            activeGestureMode = 'none';
-          }
+          // 長按期間不取消，直到手指離開
           return;
         }
 
