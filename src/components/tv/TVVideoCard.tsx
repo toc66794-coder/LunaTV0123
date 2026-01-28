@@ -1,7 +1,9 @@
 import React from 'react';
 
+import { DoubanItem } from '@/lib/types';
+
 interface TVVideoCardProps {
-  movie: any;
+  movie: DoubanItem;
   onSelect: () => void;
 }
 
@@ -16,6 +18,7 @@ export function TVVideoCard({ movie, onSelect }: TVVideoCardProps) {
       }}
       className='group relative flex-shrink-0 w-64 h-96 bg-gray-900 rounded-xl overflow-hidden transition-all duration-300 transform focus:scale-110 focus:ring-4 focus:ring-blue-500 focus:outline-none focus:z-10 shadow-lg hover:shadow-2xl'
     >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={movie.poster}
         alt={movie.title}
@@ -26,7 +29,7 @@ export function TVVideoCard({ movie, onSelect }: TVVideoCardProps) {
       <div className='absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black to-transparent'>
         <h3 className='text-xl font-bold truncate'>{movie.title}</h3>
         <p className='text-sm text-gray-400 opacity-0 group-focus:opacity-100 transition-opacity'>
-          {movie.year || '2024'} · {movie.quality || 'HD'}
+          {movie.year || '2024'} · {movie.rate ? `${movie.rate}分` : 'HD'}
         </p>
       </div>
 

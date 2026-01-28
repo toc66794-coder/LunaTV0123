@@ -1,5 +1,7 @@
 /* eslint-disable no-console */
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+'use client';
+
+import React, { createContext, useContext, useEffect } from 'react';
 
 interface TVFocusContextType {
   focusElement: (id: string) => void;
@@ -8,8 +10,6 @@ interface TVFocusContextType {
 const TVFocusContext = createContext<TVFocusContextType | null>(null);
 
 export function TVFocusProvider({ children }: { children: React.ReactNode }) {
-  const currentFocusIdRef = useRef<string | null>(null);
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const focusableElements = Array.from(

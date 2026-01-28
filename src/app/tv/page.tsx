@@ -1,63 +1,54 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+
+import { getDoubanCategories } from '@/lib/douban.client';
+import { DoubanItem } from '@/lib/types';
 
 import { TVVideoCard } from '@/components/tv/TVVideoCard';
-
-// 測試用 mock 資料
-const MOCK_MOVIES = [
-  {
-    id: '1',
-    title: '星際效應',
-    poster: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6vS6o6y6vRvHT.jpg',
-    year: '2014',
-    quality: '4K',
-  },
-  {
-    id: '2',
-    title: '全面啟動',
-    poster: 'https://image.tmdb.org/t/p/w500/9gk7Fn9sVAsS9696G1o10neS9v3.jpg',
-    year: '2010',
-    quality: 'HD',
-  },
-  {
-    id: '3',
-    title: '黑暗騎士',
-    poster: 'https://image.tmdb.org/t/p/w500/qJ2tW6WMUDO92SMRvqc6mCEOIeS.jpg',
-    year: '2008',
-    quality: 'HD',
-  },
-  {
-    id: '4',
-    title: '奧本海默',
-    poster: 'https://image.tmdb.org/t/p/w500/8Gxv2mYgiFAao4XoRJs6sSTrVsW.jpg',
-    year: '2023',
-    quality: '4K',
-  },
-  {
-    id: '5',
-    title: '敦克爾克',
-    poster: 'https://image.tmdb.org/t/p/w500/ebSnODmB9sr896O9W6pD8H60aO2.jpg',
-    year: '2017',
-    quality: 'HD',
-  },
-  {
-    id: '6',
-    title: '天能',
-    poster: 'https://image.tmdb.org/t/p/w500/k68nPLbU61R3bbpdyuxqXq9X905.jpg',
-    year: '2020',
-    quality: '4K',
-  },
-];
-
 import { TVVideoPlayer } from '@/components/tv/TVVideoPlayer';
 
 export default function TVHomePage() {
-  const [selectedMovie, setSelectedMovie] = useState<any>(null);
+  const [selectedMovie, setSelectedMovie] = useState<DoubanItem | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Real Data State
+  const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
+  const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
+  const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch Data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [movies, tvs, anims] = await Promise.all([
+          getDoubanCategories({
+            kind: 'movie',
+            category: '热门',
+            type: '全部',
+          }),
+          getDoubanCategories({ kind: 'tv', category: '热门', type: '电视剧' }),
+          getDoubanCategories({ kind: 'tv', category: '热门', type: '动漫' }),
+        ]);
+
+        if (movies.code === 200) setHotMovies(movies.list);
+        if (tvs.code === 200) setHotTvShows(tvs.list);
+        if (anims.code === 200) setHotAnimation(anims.list);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to fetch TV data', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   return (
-    <div className='flex flex-col space-y-12'>
+    <div className='flex flex-col space-y-12 p-10 pb-20'>
       {/* 頂部導航欄 */}
       <header className='flex items-center justify-between'>
         <h1 className='text-4xl font-extrabold tracking-tighter text-blue-500'>
@@ -82,35 +73,62 @@ export default function TVHomePage() {
         </div>
       </header>
 
-      {/* 熱門推薦行李表 */}
-      <section>
-        <h2 className='text-2xl font-semibold mb-6 ml-2'>熱門推薦</h2>
-        <div className='flex space-x-6 overflow-x-auto pb-12 scrollbar-hide px-2'>
-          {MOCK_MOVIES.map((movie) => (
-            <TVVideoCard
-              key={movie.id}
-              movie={movie}
-              onSelect={() => setSelectedMovie(movie)}
-            />
-          ))}
+      {/* Loading Skeleton or Real Data */}
+      {loading ? (
+        <div className='text-2xl text-gray-500 animate-pulse'>
+          正在載入精彩內容...
         </div>
-      </section>
+      ) : (
+        <>
+          {/* 熱門電影 */}
+          <section>
+            <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-blue-500 pl-4'>
+              熱門電影
+            </h2>
+            <div className='flex space-x-8 overflow-x-auto pb-8 scrollbar-hide px-2'>
+              {hotMovies.map((movie) => (
+                <TVVideoCard
+                  key={'movie-' + movie.id}
+                  movie={movie}
+                  onSelect={() => setSelectedMovie(movie)}
+                />
+              ))}
+            </div>
+          </section>
 
-      {/* 最近觀看行李表 */}
-      <section>
-        <h2 className='text-2xl font-semibold mb-6 ml-2'>最近觀看</h2>
-        <div className='flex space-x-6 overflow-x-auto pb-12 scrollbar-hide px-2'>
-          {MOCK_MOVIES.slice()
-            .reverse()
-            .map((movie) => (
-              <TVVideoCard
-                key={`recent-${movie.id}`}
-                movie={movie}
-                onSelect={() => setSelectedMovie(movie)}
-              />
-            ))}
-        </div>
-      </section>
+          {/* 熱門劇集 */}
+          <section>
+            <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-green-500 pl-4'>
+              熱門劇集
+            </h2>
+            <div className='flex space-x-8 overflow-x-auto pb-8 scrollbar-hide px-2'>
+              {hotTvShows.map((show) => (
+                <TVVideoCard
+                  key={'tv-' + show.id}
+                  movie={show}
+                  onSelect={() => setSelectedMovie(show)}
+                />
+              ))}
+            </div>
+          </section>
+
+          {/* 熱門動漫 */}
+          <section>
+            <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-pink-500 pl-4'>
+              熱門動漫
+            </h2>
+            <div className='flex space-x-8 overflow-x-auto pb-8 scrollbar-hide px-2'>
+              {hotAnimation.map((anim) => (
+                <TVVideoCard
+                  key={'anim-' + anim.id}
+                  movie={anim}
+                  onSelect={() => setSelectedMovie(anim)}
+                />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       {/* 詳情模式 (開發中) */}
       {selectedMovie && (
@@ -125,7 +143,8 @@ export default function TVHomePage() {
             <div className='flex-1 space-y-6'>
               <h1 className='text-6xl font-bold'>{selectedMovie.title}</h1>
               <p className='text-2xl text-gray-400'>
-                {selectedMovie.year} · {selectedMovie.quality}
+                {selectedMovie.year} ·{' '}
+                {selectedMovie.rate ? `${selectedMovie.rate}分` : '暫無評分'}
               </p>
               <div className='flex space-x-4 pt-10'>
                 <button
