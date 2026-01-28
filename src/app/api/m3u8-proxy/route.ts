@@ -57,13 +57,15 @@ export async function GET(request: NextRequest) {
     }
 
     const content = await response.text();
-    const baseUrl = new URL(url);
-    const origin = baseUrl.origin;
-    const baseDir = baseUrl.pathname.substring(
+    // 使用 response.url 作為基礎，這能自動處理網址重定向 (Redirect) 的問題
+    const finalUrl = new URL(response.url);
+    const origin = finalUrl.origin;
+    const baseDir = finalUrl.pathname.substring(
       0,
-      baseUrl.pathname.lastIndexOf('/') + 1
+      finalUrl.pathname.lastIndexOf('/') + 1
     );
-    const search = baseUrl.search; // 獲取原始 URL 的 Query String (包含 ?)
+    const originUrl = new URL(url);
+    const search = originUrl.search; // 保留原始請求的 Token/Query
 
     // 輔助函式：將相對路徑轉換為絕對路徑
     const resolveUri = (uri: string) => {
@@ -77,7 +79,7 @@ export async function GET(request: NextRequest) {
         absolute = `${origin}${baseDir}${cleanUri}`;
       }
 
-      // 如果路徑中沒有 ?，則補上原始 URL 的 Query String
+      // 如果路徑中沒有 ?，則補上原始 URL 的 Query String (Token)
       if (!absolute.includes('?')) {
         absolute += search;
       }
@@ -87,39 +89,42 @@ export async function GET(request: NextRequest) {
     };
 
     const lines = content.split('\n');
-    let isMaster = false;
-    const newLines = lines.map((line: string, index: number) => {
+    let isNextLineVariant = false; // 用於追蹤下一行是否為子播放列表
+
+    const newLines = lines.map((line: string) => {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
-      // 1. 檢測是否為 Master Playlist
-      if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
-        isMaster = true;
-      }
-
-      // 2. 處理標籤中的 URI (例如 #EXT-X-KEY:URI="...")
+      // 1. 處理標籤
       if (trimmed.startsWith('#')) {
+        // 如果偵測到子列表標籤，標記下一行為 Variant
+        if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+          isNextLineVariant = true;
+        }
+
+        // 處理標籤中的 URI (例如 #EXT-X-KEY:URI="...")
         if (trimmed.includes('URI=')) {
-          return trimmed.replace(/URI=([^,]+)/, (match: string, p1: string) => {
-            return `URI=${resolveUri(p1)}`;
-          });
+          return trimmed.replace(
+            /URI=([^,]+)/,
+            (_match: string, p1: string) => {
+              return `URI=${resolveUri(p1)}`;
+            }
+          );
         }
         return line;
       }
 
-      // 3. 處理純片段路徑
+      // 2. 處理路徑行
       const resolved = resolveUri(trimmed);
 
-      // 如果是 Master Playlist 的子列表，需要遞迴代理
-      if (
-        isMaster &&
-        (trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?'))
-      ) {
+      // 如果當前行是子列表 (由上一行的 #EXT-X-STREAM-INF 觸發)
+      if (isNextLineVariant) {
+        isNextLineVariant = false; // 重置狀態
         // 取得絕對路徑
         const absoluteUrl = resolved.startsWith('"')
           ? resolved.slice(1, -1)
           : resolved;
-        // 封裝進代理，注意這裡要用當前請求的 origin 作為代理的前綴
+        // 遞迴封裝進代理
         const proxyPrefix = `${request.nextUrl.origin}${request.nextUrl.pathname}`;
         return `${proxyPrefix}?url=${encodeURIComponent(absoluteUrl)}`;
       }
