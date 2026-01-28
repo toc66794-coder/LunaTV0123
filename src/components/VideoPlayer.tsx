@@ -395,7 +395,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
                 pointer-events: auto;
               ">
                 <div id="ad-btn-container"></div>
-                <div id="saver-btn-container"></div>
+                {/* <div id="saver-btn-container"></div> */}
                 <div id="speed-btns-container" style="display: flex; gap: 4px;"></div>
                 <div id="download-btn-container"></div>
                 <div id="settings-btn-container"></div>
@@ -442,7 +442,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           `;
         }
 
-        // --- Screen Saver Button (New Independent Container) ---
+        // --- Screen Saver Button (Hidden for now) ---
+        /*
         const saverContainer = $controls.querySelector('#saver-btn-container');
         if (saverContainer) {
           const saverOn = saverEnabledRef.current;
@@ -455,6 +456,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             </button>
           `;
         }
+        */
 
         // --- Other Buttons ---
         const speedContainer = $controls.querySelector('#speed-btns-container');
