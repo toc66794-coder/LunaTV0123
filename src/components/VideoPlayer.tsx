@@ -23,6 +23,10 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   lastPlaybackRate: number;
 }
 
+// 開發者測試開關：是否強制讓主播放器 (手機/網頁) 也走 Proxy 測試 Upstash 快取
+// true: 手機也走 Proxy (測試用); false: 手機走直連 (正式環境建議值)
+const FORCED_MOBILE_PROXY = true;
+
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
   (
     {
@@ -63,7 +67,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
     const saverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Overlay 管理函數
-    const manageOverlay = (action: 'show' | 'hide') => {
+    const manageOverlay = React.useCallback((action: 'show' | 'hide') => {
       const art = artInstanceRef.current;
       // 嘗試獲取容器：優先使用 art.template.$container (播放器核心容器)，
       // 這樣在全螢幕下 (通常是對該容器全螢幕) Overlay 才會在內部顯示。
@@ -115,7 +119,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            resetSaverTimer(); // 這會呼叫 hideOverlay
+            // 使用 Ref 呼叫以避免循環依賴
+            if (resetSaverTimerRef.current) resetSaverTimerRef.current();
           };
 
           ['click', 'touchstart', 'touchmove', 'touchend'].forEach((evt) => {
@@ -134,10 +139,13 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }
         isDimmedRef.current = false;
       }
-    };
+    }, []);
+
+    // 使用 Ref 儲存 resetSaverTimer 以供 manageOverlay 內部調用，打破循環依賴
+    const resetSaverTimerRef = useRef<() => void>(null);
 
     // 重置計時器
-    const resetSaverTimer = () => {
+    const resetSaverTimer = React.useCallback(() => {
       // 1. 清除舊計時器
       if (saverTimerRef.current) {
         clearTimeout(saverTimerRef.current);
@@ -156,7 +164,12 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           manageOverlay('show');
         }, 5000);
       }
-    };
+    }, [manageOverlay]);
+
+    // 同步 Ref
+    useEffect(() => {
+      (resetSaverTimerRef as any).current = resetSaverTimer;
+    }, [resetSaverTimer]);
 
     // 監聽 saverEnabled 變化 (這是唯一會觸發 React re-render 的部分，僅在開關按鈕時)
     useEffect(() => {
@@ -173,10 +186,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       }
 
       // 更新按鈕狀態 UI
-      if (typeof (window as any).refreshCustomControls === 'function') {
-        (window as any).refreshCustomControls();
-      }
-    }, [saverEnabled]);
+    }, [saverEnabled, manageOverlay, resetSaverTimer]);
 
     // 綁定全域交互 (Play 期間防休眠，也順便重置計時器)
     useEffect(() => {
@@ -224,11 +234,14 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       const art = new Artplayer({
         ...option,
-        url: option.url,
+        url:
+          blockAdEnabledRef.current && FORCED_MOBILE_PROXY
+            ? `/api/m3u8-proxy?url=${encodeURIComponent(option.url)}`
+            : option.url,
         container: artRef.current,
         plugins: [
           artplayerPluginChromecast({
-            // 投屏時使用代理伺服器來去廣告，主播放器則在客戶端處理以保證流暢
+            // 投屏時始終使用代理伺服器來去廣告 (且現在有 Upstash 快取)
             url: blockAdEnabledRef.current
               ? `/api/m3u8-proxy?url=${encodeURIComponent(option.url)}`
               : option.url,

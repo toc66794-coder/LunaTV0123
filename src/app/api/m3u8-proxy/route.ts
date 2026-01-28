@@ -1,4 +1,11 @@
+import { Redis } from '@upstash/redis';
 import { NextRequest, NextResponse } from 'next/server';
+
+// 初始化 Redis 客戶端
+const redis = new Redis({
+  url: process.env.UPSTASH_URL || '',
+  token: process.env.UPSTASH_TOKEN || '',
+});
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -8,7 +15,30 @@ export async function GET(request: NextRequest) {
     return new NextResponse('Missing url parameter', { status: 400 });
   }
 
+  // 生成快取 Key (URL 的 Base64)
+  const cacheKey = `m3u8_cache:${Buffer.from(url).toString('base64')}`;
+
   try {
+    // 1. 嘗試從 Redis 獲取快取
+    try {
+      const cachedContent = await redis.get<string>(cacheKey);
+      if (cachedContent) {
+        // eslint-disable-next-line no-console
+        console.log('[Proxy] Cache Hit:', url);
+        return new NextResponse(cachedContent, {
+          headers: {
+            'Content-Type': 'application/vnd.apple.mpegurl',
+            'Access-Control-Allow-Origin': '*',
+            'X-Cache': 'HIT',
+          },
+        });
+      }
+    } catch (redisError) {
+      // eslint-disable-next-line no-console
+      console.error('[Proxy] Redis Read Error:', redisError);
+      // Redis 失敗則繼續執行，不中斷請求
+    }
+
     const headers: Record<string, string> = {
       'User-Agent':
         request.headers.get('user-agent') ||
@@ -58,10 +88,21 @@ export async function GET(request: NextRequest) {
 
     const modifiedContent = newLines.join('\n');
 
+    // 2. 將結果存入 Redis (TTL 300秒 / 5分鐘)
+    try {
+      await redis.set(cacheKey, modifiedContent, { ex: 300 });
+      // eslint-disable-next-line no-console
+      console.log('[Proxy] Cache Set:', url);
+    } catch (redisError) {
+      // eslint-disable-next-line no-console
+      console.error('[Proxy] Redis Write Error:', redisError);
+    }
+
     return new NextResponse(modifiedContent, {
       headers: {
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
+        'X-Cache': 'MISS',
       },
     });
   } catch (error) {
