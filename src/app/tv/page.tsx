@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
-import { DoubanItem } from '@/lib/types';
+import { DoubanItem, SearchResult } from '@/lib/types';
 
 import { TVVideoCard } from '@/components/tv/TVVideoCard';
 import { TVVideoPlayer } from '@/components/tv/TVVideoPlayer';
@@ -17,6 +17,11 @@ export default function TVHomePage() {
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Video Source & Episodes State
+  const [isSearchingSources, setIsSearchingSources] = useState(false);
+  const [videoDetail, setVideoDetail] = useState<SearchResult | null>(null);
+  const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
 
   // Fetch Data
   useEffect(() => {
@@ -46,6 +51,50 @@ export default function TVHomePage() {
 
     fetchData();
   }, []);
+
+  // Fetch Video Source when a movie is selected
+  useEffect(() => {
+    if (!selectedMovie) {
+      setVideoDetail(null);
+      setSelectedEpisodeIndex(0);
+      return;
+    }
+
+    const searchSource = async () => {
+      try {
+        setIsSearchingSources(true);
+        // 1. 搜尋播放源
+        const searchRes = await fetch(
+          `/api/search?q=${encodeURIComponent(selectedMovie.title)}`
+        );
+        const searchData = await searchRes.json();
+        const results = searchData.results || [];
+
+        // 2. 匹配最精確的源 (標題一致且年份接近)
+        const match = results.find(
+          (r: any) =>
+            r.title.includes(selectedMovie.title) ||
+            selectedMovie.title.includes(r.title)
+        );
+
+        if (match) {
+          // 3. 獲取詳細集數資訊
+          const detailRes = await fetch(
+            `/api/detail?source=${match.source}&id=${match.id}`
+          );
+          const detailData = await detailRes.json();
+          setVideoDetail(detailData);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to search sources', err);
+      } finally {
+        setIsSearchingSources(false);
+      }
+    };
+
+    searchSource();
+  }, [selectedMovie]);
 
   return (
     <div className='flex flex-col space-y-12 p-10 pb-20'>
@@ -130,31 +179,55 @@ export default function TVHomePage() {
         </>
       )}
 
-      {/* 詳情模式 (開發中) */}
+      {/* 詳情模式 */}
       {selectedMovie && (
-        <div className='fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-20 animate-in fade-in zoom-in duration-300'>
-          <div className='max-w-6xl w-full flex space-x-12'>
+        <div className='fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-20 animate-in fade-in zoom-in duration-300'>
+          <div className='max-w-7xl w-full flex space-x-16'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={selectedMovie.poster}
-              className='w-80 rounded-2xl shadow-2xl'
+              className='w-96 rounded-2xl shadow-2xl border-4 border-white/10'
               alt=''
             />
-            <div className='flex-1 space-y-6'>
-              <h1 className='text-6xl font-bold'>{selectedMovie.title}</h1>
-              <p className='text-2xl text-gray-400'>
+            <div className='flex-1 flex flex-col justify-center space-y-8'>
+              <h1 className='text-7xl font-bold'>{selectedMovie.title}</h1>
+              <p className='text-3xl text-gray-400'>
                 {selectedMovie.year} ·{' '}
                 {selectedMovie.rate ? `${selectedMovie.rate}分` : '暫無評分'}
               </p>
-              <div className='flex space-x-4 pt-10'>
-                <button
-                  data-tv-focusable='true'
-                  autoFocus
-                  className='px-12 py-4 bg-blue-600 rounded-xl text-2xl font-bold focus:ring-8 focus:ring-blue-400 outline-none transition-all hover:bg-blue-700'
-                  onClick={() => setIsPlaying(true)}
-                >
-                  立即播放
-                </button>
+
+              {/* 集數選擇列表 */}
+              <div className='space-y-4'>
+                <h3 className='text-xl font-semibold text-blue-400'>
+                  {isSearchingSources ? '正在搜尋線路...' : '播放列表'}
+                </h3>
+                <div className='flex flex-wrap gap-4 max-h-[300px] overflow-y-auto pr-4 scrollbar-hide'>
+                  {videoDetail?.episodes?.map((ep: string, index: number) => (
+                    <button
+                      key={index}
+                      data-tv-focusable='true'
+                      className={`px-8 py-3 rounded-xl text-xl font-medium border-2 transition-all outline-none ${
+                        selectedEpisodeIndex === index
+                          ? 'border-blue-500 bg-blue-600'
+                          : 'border-gray-800 bg-gray-900 focus:border-blue-400 focus:bg-gray-800'
+                      }`}
+                      onClick={() => {
+                        setSelectedEpisodeIndex(index);
+                        setIsPlaying(true);
+                      }}
+                    >
+                      {videoDetail.episodes.length > 1
+                        ? `第 ${index + 1} 集`
+                        : '立即播放'}
+                    </button>
+                  ))}
+                  {!isSearchingSources && !videoDetail && (
+                    <p className='text-gray-500 italic'>暫無可用線路</p>
+                  )}
+                </div>
+              </div>
+
+              <div className='flex space-x-6 pt-8'>
                 <button
                   data-tv-focusable='true'
                   className='px-12 py-4 bg-gray-800 rounded-xl text-2xl font-bold focus:ring-8 focus:ring-gray-600 outline-none transition-all hover:bg-gray-700'
@@ -169,14 +242,24 @@ export default function TVHomePage() {
       )}
 
       {/* 全螢幕播放器模式 */}
-      {isPlaying && selectedMovie && (
+      {isPlaying && selectedMovie && videoDetail && (
         <div className='fixed inset-0 z-[100] bg-black'>
           <TVVideoPlayer
-            url='https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' // 暫時使用測試源，後續接上真實 M3U8
-            title={selectedMovie.title}
+            url={videoDetail.episodes[selectedEpisodeIndex]}
+            title={`${selectedMovie.title}${
+              videoDetail.episodes.length > 1
+                ? ` - 第 ${selectedEpisodeIndex + 1} 集`
+                : ''
+            }`}
             poster={selectedMovie.poster}
             onClose={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
+            onEnded={() => {
+              if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
+                setSelectedEpisodeIndex(selectedEpisodeIndex + 1);
+              } else {
+                setIsPlaying(false);
+              }
+            }}
           />
         </div>
       )}
