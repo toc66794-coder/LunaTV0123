@@ -132,6 +132,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
     ]);
 
     useEffect(() => {
+      console.log('[LunaTV] Player Version: 2.1 (ScreenSaver Added)');
       if (!artRef.current) return;
 
       const art = new Artplayer({
