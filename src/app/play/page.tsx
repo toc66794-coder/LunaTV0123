@@ -229,6 +229,9 @@ function PlayPageClient() {
   // Wake Lock 相关
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
+  // --- 追踪是否已经触发过自动全屏 ---
+  const hasAutoFullscreenRef = useRef(false);
+
   // --- 全域下載管理整合 ---
   const { tasks, addDownloadTask } = useDownload();
   const downloadTasksRef = useRef(tasks);
@@ -1075,6 +1078,7 @@ function PlayPageClient() {
     // 监听播放器事件
     art.on('ready', () => {
       setError(null);
+      hasAutoFullscreenRef.current = false; // 重置狀態
       // 播放器就绪后，如果正在播放则请求 Wake Lock
       if (art && !art.paused) {
         requestWakeLock();
@@ -1197,6 +1201,21 @@ function PlayPageClient() {
       requestWakeLock();
     });
 
+    // 修正：將自動全螢幕邏輯移到 playing 事件，確保真正開始播放
+    art.on('video:playing', () => {
+      if (!hasAutoFullscreenRef.current) {
+        hasAutoFullscreenRef.current = true;
+        // 自動進入全螢幕
+        if (art && !art.fullscreen) {
+          try {
+            art.fullscreen = true;
+          } catch (err) {
+            console.warn('自動全螢幕失敗:', err);
+          }
+        }
+      }
+    });
+
     art.on('pause', () => {
       releaseWakeLock();
       saveCurrentPlayProgress();
@@ -1253,17 +1272,6 @@ function PlayPageClient() {
 
       // 隐藏换源加载状态
       setIsVideoLoading(false);
-
-      // 自動進入全螢幕（延遲以確保播放器完全就緒）
-      setTimeout(() => {
-        if (art && !art.fullscreen) {
-          try {
-            art.fullscreen = true;
-          } catch (err) {
-            console.warn('自動全螢幕失敗:', err);
-          }
-        }
-      }, 300);
     });
 
     // 监听视频时间更新事件，实现跳过片头片尾

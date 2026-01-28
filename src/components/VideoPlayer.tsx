@@ -411,6 +411,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       let speedBeforeLongPress = 1;
       let lastTapTime = 0;
       let lastTapSide: 'left' | 'right' | null = null;
+      let currentBrightness = 100; // 內部維護精確亮度值
 
       const $container = art.template.$container;
       if (!$container) return;
@@ -422,6 +423,18 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         startY = touch.clientY - rect.top;
         startTime = Date.now();
         activeGestureMode = 'none';
+
+        // 初始化亮度值
+        if (art.video) {
+          const styleFilter = art.video.style.filter;
+          const match = styleFilter.match(/brightness\((\d+)%\)/);
+          if (match) {
+            currentBrightness = parseInt(match[1], 10);
+          } else {
+            // 如果沒有設置，預設為 100
+            currentBrightness = 100;
+          }
+        }
 
         // 啟動長按計時器 (500ms)
         if (longPressTimer) clearTimeout(longPressTimer);
@@ -448,12 +461,13 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         // 如果已經在長按模式，完全鎖定（不允許任何其他手勢）
         if (activeGestureMode === 'longpress') {
           if (e.cancelable) e.preventDefault();
-          // 長按期間不取消，直到手指離開
+          e.stopPropagation(); // 阻止事件冒泡
+          e.stopImmediatePropagation(); // 阻止同元素其他事件
           return;
         }
 
         // 如果還在長按計時中且移動明顯，取消計時器
-        if (longPressTimer && (deltaX > 40 || deltaY > 40)) {
+        if (longPressTimer && (deltaX > 20 || deltaY > 20)) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
@@ -466,31 +480,40 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
         // 如果已經進入某個模式，持續該模式（鎖定方向）
         if (activeGestureMode === 'seeking') {
-          // 已經在水平滑動模式，繼續
           return;
         }
 
         if (activeGestureMode === 'adjusting') {
-          // 已經在垂直調整模式，繼續執行
           if (e.cancelable) e.preventDefault();
 
           const yChange = startY - currentY;
           const xPercent = startX / rect.width;
 
           if (xPercent < 0.3) {
-            // 左側：亮度調整
-            const change = yChange * 0.8;
+            // 左側：亮度調整 (平滑化處理)
+            // 降低靈敏度係數
+            const sensitivity = 0.5;
+            const change = yChange * sensitivity;
+
+            // 基於記錄的起始值計算，而不是每次都讀 DOM
+            // 這裡我們需要的是增量更新
+            // 但為了平滑，我們使用 currentBrightness 累積
+            const targetBrightness = Math.max(
+              10,
+              Math.min(200, currentBrightness + change)
+            );
+
+            // 應用到 DOM
             if (art.video) {
-              const current =
-                art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
-                '100';
-              const next = Math.max(
-                50,
-                Math.min(200, parseInt(current) + change)
-              );
-              art.video.style.filter = `brightness(${next}%)`;
-              art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
+              art.video.style.filter = `brightness(${Math.round(
+                targetBrightness
+              )}%)`;
             }
+            art.notice.show = `☀️ 亮度: ${Math.round(targetBrightness)}%`;
+
+            // 注意：這裡不更新 currentBrightness，因為 startY 未重置
+            // 這種模式下是 "拖曳距離 -> 亮度變化量" 的映射
+            // 如果要實現 "增量累積"，需要重置 startY
           } else if (xPercent > 0.7) {
             // 右側：音量調整
             const volumeChange = yChange * 0.005;
@@ -502,59 +525,41 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
           }
 
-          startY = currentY; // 更新起點，實現連續調整
+          // 重置起點，實現平滑增量更新
+          startY = currentY;
+          // 對於亮度，更新基準值
+          if (xPercent < 0.3) {
+            const change = yChange * 0.5;
+            currentBrightness = Math.max(
+              10,
+              Math.min(200, currentBrightness + change)
+            );
+          }
+
           return;
         }
 
-        // 首次判定方向（使用容差比例，允許傾斜）
-        const horizontalTolerance = 0.6; // 水平優先需要 deltaX > deltaY * 1.67
-        const verticalTolerance = 0.6; // 垂直優先需要 deltaY > deltaX * 1.67
+        // 首次判定方向
+        const horizontalTolerance = 0.6;
+        const verticalTolerance = 0.6;
 
-        // 判定為水平：deltaX 明顯大於 deltaY
         if (
           deltaX > deltaY / horizontalTolerance &&
           deltaX > minMoveThreshold
         ) {
           activeGestureMode = 'seeking';
-          // 不 preventDefault，讓 ArtPlayer 的原生手勢處理
           return;
         }
 
-        // 判定為垂直：deltaY 明顯大於 deltaX（允許一定傾斜）
         if (deltaY > deltaX / verticalTolerance && deltaY > minMoveThreshold) {
           activeGestureMode = 'adjusting';
-          // 立即執行第一次調整
           if (e.cancelable) e.preventDefault();
-
-          const yChange = startY - currentY;
-          const xPercent = startX / rect.width;
-
-          if (xPercent < 0.3) {
-            // 左側：亮度調整
-            const change = yChange * 0.8;
-            if (art.video) {
-              const current =
-                art.video.style.filter.match(/brightness\((\d+)%\)/)?.[1] ||
-                '100';
-              const next = Math.max(
-                50,
-                Math.min(200, parseInt(current) + change)
-              );
-              art.video.style.filter = `brightness(${next}%)`;
-              art.notice.show = `☀️ 亮度: ${Math.round(next)}%`;
-            }
-          } else if (xPercent > 0.7) {
-            // 右側：音量調整
-            const volumeChange = yChange * 0.005;
-            const newVolume = Math.max(
-              0,
-              Math.min(1, art.volume + volumeChange)
-            );
-            art.volume = newVolume;
-            art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
+          // 初始化亮度基準值 (防止跳變)
+          if (art.video) {
+            const styleFilter = art.video.style.filter;
+            const match = styleFilter.match(/brightness\((\d+)%\)/);
+            currentBrightness = match ? parseInt(match[1], 10) : 100;
           }
-
-          startY = currentY;
           return;
         }
       };
@@ -564,6 +569,10 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
         // 長按模式結束
         if (activeGestureMode === 'longpress') {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
           art.playbackRate = speedBeforeLongPress;
           art.notice.show = '';
           activeGestureMode = 'none';
@@ -583,7 +592,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           return;
         }
 
-        // 雙擊檢測（只在快速點擊時觸發）
+        // 雙擊檢測
         const touch = e.changedTouches[0];
         const rect = $container.getBoundingClientRect();
         const x = touch.clientX - rect.left;
@@ -617,22 +626,31 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         activeGestureMode = 'none';
       };
 
-      $container.addEventListener('touchstart', handleTouchStart, {
-        passive: false,
-      });
-      $container.addEventListener('touchmove', handleTouchMove, {
-        passive: false,
-      });
-      $container.addEventListener('touchend', handleTouchEnd, {
-        passive: false,
-      });
+      // 使用 capture 選項確保我們先於 Artplayer 內部處理
+      const eventOptions = { passive: false, capture: true };
+
+      $container.addEventListener('touchstart', handleTouchStart, eventOptions);
+      $container.addEventListener('touchmove', handleTouchMove, eventOptions);
+      $container.addEventListener('touchend', handleTouchEnd, eventOptions);
 
       if (getInstance) getInstance(art);
 
       return () => {
-        $container.removeEventListener('touchstart', handleTouchStart);
-        $container.removeEventListener('touchmove', handleTouchMove);
-        $container.removeEventListener('touchend', handleTouchEnd);
+        $container.removeEventListener(
+          'touchstart',
+          handleTouchStart,
+          eventOptions
+        );
+        $container.removeEventListener(
+          'touchmove',
+          handleTouchMove,
+          eventOptions
+        );
+        $container.removeEventListener(
+          'touchend',
+          handleTouchEnd,
+          eventOptions
+        );
         if (art && art.destroy) {
           if (art.video && (art.video as any).hls) {
             (art.video as any).hls.destroy();
