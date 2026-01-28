@@ -56,26 +56,109 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
     const lastVolumeRef = useRef(lastVolume);
     const lastPlaybackRateRef = useRef(lastPlaybackRate);
 
-    // --- 省電模式邏輯 (Top Level Hooks) ---
+    // --- 省電模式邏輯 (Ref-based, Zero Re-render) ---
     const [saverEnabled, setSaverEnabled] = React.useState(false);
-    const [isDimmed, setIsDimmed] = React.useState(false);
-    const saverTimerRef = useRef<NodeJS.Timeout | null>(null);
     const saverEnabledRef = useRef(saverEnabled);
+    const isDimmedRef = useRef(false);
+    const saverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // 重置省電計時器
-    const resetSaverTimer = () => {
-      if (saverTimerRef.current) clearTimeout(saverTimerRef.current);
-      setIsDimmed(false);
+    // Overlay 管理函數
+    const manageOverlay = (action: 'show' | 'hide') => {
+      const art = artInstanceRef.current;
+      // 嘗試獲取容器：優先使用 art.template.$container (播放器核心容器)，
+      // 這樣在全螢幕下 (通常是對該容器全螢幕) Overlay 才會在內部顯示。
+      const container =
+        art?.template?.$container || artRef.current?.parentElement;
 
-      if (saverEnabledRef.current) {
-        saverTimerRef.current = setTimeout(() => {
-          console.log('[LunaTV] Timer fired! Dimming screen...');
-          setIsDimmed(true);
-        }, 5000); // 5秒無操作進入黑屏
+      if (!container) return;
+
+      const OVERLAY_ID = 'luna-saver-overlay';
+      let overlay = container.querySelector(`#${OVERLAY_ID}`) as HTMLElement;
+
+      if (action === 'show') {
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = OVERLAY_ID;
+          overlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            z-index: 2147483647;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            font-family: system-ui, sans-serif;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+          `;
+          overlay.innerHTML = `
+            <div style="font-size: 32px; margin-bottom: 16px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.3)); animation: pulse 2s infinite;">⚡</div>
+            <div style="font-size: 16px; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.8);">省電模式</div>
+            <div style="font-size: 12px; opacity: 0.8; margin-top: 6px;">輕觸螢幕喚醒</div>
+            <style>
+              @keyframes pulse {
+                0% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.7; transform: scale(0.95); }
+                100% { opacity: 1; transform: scale(1); }
+              }
+            </style>
+          `;
+
+          // 綁定喚醒事件
+          const wakeUp = (e: Event) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            resetSaverTimer(); // 這會呼叫 hideOverlay
+          };
+
+          ['click', 'touchstart', 'touchmove', 'touchend'].forEach((evt) => {
+            overlay.addEventListener(evt, wakeUp, {
+              capture: true,
+              passive: false,
+            });
+          });
+
+          container.appendChild(overlay);
+        }
+        isDimmedRef.current = true;
+      } else {
+        if (overlay) {
+          overlay.remove();
+        }
+        isDimmedRef.current = false;
       }
     };
 
-    // 同步 Ref
+    // 重置計時器
+    const resetSaverTimer = () => {
+      // 1. 清除舊計時器
+      if (saverTimerRef.current) {
+        clearTimeout(saverTimerRef.current);
+        saverTimerRef.current = null;
+      }
+
+      // 2. 如果之前是黑屏，先恢復 (隱藏 Overlay)
+      if (isDimmedRef.current) {
+        manageOverlay('hide');
+      }
+
+      // 3. 如果模式開啟，重新設定計時器
+      if (saverEnabledRef.current) {
+        saverTimerRef.current = setTimeout(() => {
+          console.log('[LunaTV] Timer fired! Showing overlay...');
+          manageOverlay('show');
+        }, 5000);
+      }
+    };
+
+    // 監聽 saverEnabled 變化 (這是唯一會觸發 React re-render 的部分，僅在開關按鈕時)
     useEffect(() => {
       saverEnabledRef.current = saverEnabled;
       if (saverEnabled) {
@@ -84,20 +167,24 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           artInstanceRef.current.notice.show = '省電模式已開啟 (5秒後黑屏)';
       } else {
         if (saverTimerRef.current) clearTimeout(saverTimerRef.current);
-        setIsDimmed(false);
+        manageOverlay('hide');
         if (artInstanceRef.current)
           artInstanceRef.current.notice.show = '省電模式已關閉';
       }
-      // 觸發 UI 更新 (按鈕顏色)
+
+      // 更新按鈕狀態 UI
       if (typeof (window as any).refreshCustomControls === 'function') {
         (window as any).refreshCustomControls();
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [saverEnabled]);
 
-    // 綁定全域交互以重置計時器
+    // 綁定全域交互 (Play 期間防休眠，也順便重置計時器)
     useEffect(() => {
       if (!saverEnabled) return;
+      const handler = () => {
+        // 只有當沒黑屏時才重置，避免黑屏時的觸摸事件重複觸發 (黑屏有自己的 wakeUp)
+        if (!isDimmedRef.current) resetSaverTimer();
+      };
       const events = [
         'touchstart',
         'touchmove',
@@ -105,7 +192,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         'mousemove',
         'keydown',
       ];
-      const handler = () => resetSaverTimer();
       events.forEach((ev) => window.addEventListener(ev, handler));
       return () => {
         events.forEach((ev) => window.removeEventListener(ev, handler));
