@@ -224,11 +224,16 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       const art = new Artplayer({
         ...option,
-        url: blockAdEnabledRef.current
-          ? `/api/m3u8-proxy?url=${encodeURIComponent(option.url)}`
-          : option.url,
+        url: option.url,
         container: artRef.current,
-        plugins: [artplayerPluginChromecast({})],
+        plugins: [
+          artplayerPluginChromecast({
+            // 投屏時使用代理伺服器來去廣告，主播放器則在客戶端處理以保證流暢
+            url: blockAdEnabledRef.current
+              ? `/api/m3u8-proxy?url=${encodeURIComponent(option.url)}`
+              : option.url,
+          }),
+        ],
         customType: {
           m3u8: async function (video: HTMLVideoElement, url: string) {
             const { default: Hls } = await import('hls.js');
@@ -395,7 +400,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
                 pointer-events: auto;
               ">
                 <div id="ad-btn-container"></div>
-                {/* saver-btn-container removed to hide feature */}
                 <div id="speed-btns-container" style="display: flex; gap: 4px;"></div>
                 <div id="download-btn-container"></div>
                 <div id="settings-btn-container"></div>
