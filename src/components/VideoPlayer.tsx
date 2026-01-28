@@ -56,6 +56,63 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
     const lastVolumeRef = useRef(lastVolume);
     const lastPlaybackRateRef = useRef(lastPlaybackRate);
 
+    // --- 省電模式邏輯 (Top Level Hooks) ---
+    const [saverEnabled, setSaverEnabled] = React.useState(false);
+    const [isDimmed, setIsDimmed] = React.useState(false);
+    const saverTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const saverEnabledRef = useRef(saverEnabled);
+
+    // 重置省電計時器
+    const resetSaverTimer = () => {
+      if (saverTimerRef.current) clearTimeout(saverTimerRef.current);
+      setIsDimmed(false);
+
+      if (saverEnabledRef.current) {
+        saverTimerRef.current = setTimeout(() => {
+          setIsDimmed(true);
+        }, 5000); // 5秒無操作進入黑屏
+      }
+    };
+
+    // 同步 Ref
+    useEffect(() => {
+      saverEnabledRef.current = saverEnabled;
+      if (saverEnabled) {
+        resetSaverTimer();
+        if (artInstanceRef.current)
+          artInstanceRef.current.notice.show = '省電模式已開啟 (5秒後黑屏)';
+      } else {
+        if (saverTimerRef.current) clearTimeout(saverTimerRef.current);
+        setIsDimmed(false);
+        if (artInstanceRef.current)
+          artInstanceRef.current.notice.show = '省電模式已關閉';
+      }
+      // 觸發 UI 更新 (按鈕顏色)
+      if (typeof (window as any).refreshCustomControls === 'function') {
+        (window as any).refreshCustomControls();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [saverEnabled]);
+
+    // 綁定全域交互以重置計時器
+    useEffect(() => {
+      if (!saverEnabled) return;
+      const events = [
+        'touchstart',
+        'touchmove',
+        'click',
+        'mousemove',
+        'keydown',
+      ];
+      const handler = () => resetSaverTimer();
+      events.forEach((ev) => window.addEventListener(ev, handler));
+      return () => {
+        events.forEach((ev) => window.removeEventListener(ev, handler));
+        if (saverTimerRef.current) clearTimeout(saverTimerRef.current);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [saverEnabled]);
+
     useEffect(() => {
       blockAdEnabledRef.current = blockAdEnabled;
       skipConfigRef.current = skipConfig;
@@ -271,6 +328,11 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         art.playbackRate = s;
       };
 
+      // 將 setSaverEnabled 暴露給 window
+      (window as any).toggleSaverMode = () => {
+        setSaverEnabled((prev) => !prev);
+      };
+
       const updateCustomControls = () => {
         if (!art || !art.template || !art.template.$container) return;
         const $controls = art.template.$container.querySelector(
@@ -278,17 +340,29 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         );
         if (!$controls) return;
 
+        // ... existing buttons ...
+
         const adContainer = $controls.querySelector('#ad-btn-container');
         if (adContainer) {
           const enabled = blockAdEnabledRef.current;
+          const saverOn = saverEnabledRef.current; // 使用 Ref 獲取最新狀態
           adContainer.innerHTML = `
+            <div style="display: flex; gap: 8px;">
               <button onclick="window.toggleAdBlock()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
                 enabled ? 'rgba(34, 197, 94, 0.9)' : 'rgba(107, 114, 128, 0.7)'
-              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" title="去廣告開關">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.744c0 5.273 3.69 9.689 8.602 10.71a11.99 11.99 0 008.602-10.71c0-1.299-.206-2.55-.586-3.725A12.147 12.147 0 0112 2.714z"/></svg>
               </button>
-            `;
+              <button onclick="window.toggleSaverMode()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
+                saverOn ? 'rgba(16, 185, 129, 0.9)' : 'rgba(107, 114, 128, 0.7)'
+              }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" title="省電模式 (黑屏)">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+              </button>
+            </div>
+          `;
         }
+
+        // ... existing code ...
 
         const speedContainer = $controls.querySelector('#speed-btns-container');
         if (speedContainer) {
@@ -646,7 +720,37 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           touchAction: 'none',
         }}
         {...divProps}
-      />
+      >
+        {isDimmed && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation(); // 阻止事件傳遞給底層播放器
+              resetSaverTimer();
+            }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'black',
+              zIndex: 9999,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'rgba(255, 255, 255, 0.3)',
+              userSelect: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontSize: '14px', marginBottom: '8px' }}>
+              省電模式 (觸碰喚醒)
+            </div>
+            <div style={{ fontSize: '12px' }}>投屏與音訊仍在背景執行中</div>
+          </div>
+        )}
+      </div>
     );
   }
 );
