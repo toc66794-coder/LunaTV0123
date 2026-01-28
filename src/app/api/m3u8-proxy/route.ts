@@ -58,32 +58,73 @@ export async function GET(request: NextRequest) {
 
     const content = await response.text();
     const baseUrl = new URL(url);
+    const origin = baseUrl.origin;
     const baseDir = baseUrl.pathname.substring(
       0,
       baseUrl.pathname.lastIndexOf('/') + 1
     );
-    const origin = baseUrl.origin;
+    const search = baseUrl.search; // 獲取原始 URL 的 Query String (包含 ?)
+
+    // 輔助函式：將相對路徑轉換為絕對路徑
+    const resolveUri = (uri: string) => {
+      const cleanUri = uri.replace(/["']/g, ''); // 移除引號
+      if (cleanUri.startsWith('http')) return uri; // 已經是絕對路徑
+
+      let absolute;
+      if (cleanUri.startsWith('/')) {
+        absolute = `${origin}${cleanUri}`;
+      } else {
+        absolute = `${origin}${baseDir}${cleanUri}`;
+      }
+
+      // 如果路徑中沒有 ?，則補上原始 URL 的 Query String
+      if (!absolute.includes('?')) {
+        absolute += search;
+      }
+
+      // 如果原本有引號，補回來
+      return uri.startsWith('"') ? `"${absolute}"` : absolute;
+    };
 
     const lines = content.split('\n');
-    const newLines = lines.map((line) => {
+    let isMaster = false;
+    const newLines = lines.map((line: string, index: number) => {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return line;
+      if (!trimmed) return line;
 
-      // It is a segment URI
-      try {
-        // If absolute, return as is
-        new URL(trimmed);
-        return trimmed;
-      } catch {
-        // Relative URL - resolve against base
-        if (trimmed.startsWith('/')) {
-          // Absolute path relative to domain
-          return `${origin}${trimmed}`;
-        } else {
-          // Relative path relative to current directory
-          return `${origin}${baseDir}${trimmed}`;
-        }
+      // 1. 檢測是否為 Master Playlist
+      if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+        isMaster = true;
       }
+
+      // 2. 處理標籤中的 URI (例如 #EXT-X-KEY:URI="...")
+      if (trimmed.startsWith('#')) {
+        if (trimmed.includes('URI=')) {
+          return trimmed.replace(/URI=([^,]+)/, (match: string, p1: string) => {
+            return `URI=${resolveUri(p1)}`;
+          });
+        }
+        return line;
+      }
+
+      // 3. 處理純片段路徑
+      const resolved = resolveUri(trimmed);
+
+      // 如果是 Master Playlist 的子列表，需要遞迴代理
+      if (
+        isMaster &&
+        (trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?'))
+      ) {
+        // 取得絕對路徑
+        const absoluteUrl = resolved.startsWith('"')
+          ? resolved.slice(1, -1)
+          : resolved;
+        // 封裝進代理，注意這裡要用當前請求的 origin 作為代理的前綴
+        const proxyPrefix = `${request.nextUrl.origin}${request.nextUrl.pathname}`;
+        return `${proxyPrefix}?url=${encodeURIComponent(absoluteUrl)}`;
+      }
+
+      return resolved;
     });
 
     const modifiedContent = newLines.join('\n');
