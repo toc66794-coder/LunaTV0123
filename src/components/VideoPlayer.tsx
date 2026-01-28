@@ -395,7 +395,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
                 pointer-events: auto;
               ">
                 <div id="ad-btn-container"></div>
-                {/* <div id="saver-btn-container"></div> */}
+                {/* saver-btn-container removed to hide feature */}
                 <div id="speed-btns-container" style="display: flex; gap: 4px;"></div>
                 <div id="download-btn-container"></div>
                 <div id="settings-btn-container"></div>
@@ -441,22 +441,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             </button>
           `;
         }
-
-        // --- Screen Saver Button (Hidden for now) ---
-        /*
-        const saverContainer = $controls.querySelector('#saver-btn-container');
-        if (saverContainer) {
-          const saverOn = saverEnabledRef.current;
-          console.log('[LunaTV] Rendering Saver Button. State:', saverOn);
-          saverContainer.innerHTML = `
-            <button onclick="window.toggleSaverMode()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
-              saverOn ? 'rgba(16, 185, 129, 0.9)' : 'rgba(107, 114, 128, 0.7)'
-            }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" title="省電模式 (黑屏)">
-              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
-            </button>
-          `;
-        }
-        */
 
         // --- Other Buttons ---
         const speedContainer = $controls.querySelector('#speed-btns-container');
