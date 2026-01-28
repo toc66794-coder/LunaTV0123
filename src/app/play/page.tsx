@@ -1196,23 +1196,57 @@ function PlayPageClient() {
       (window as any).refreshCustomControls = updateCustomControls;
     });
 
-    // 监听播放状态变化，控制 Wake Lock
+    // --- 自動全螢幕封裝函數 (含錯誤處理) ---
+    const tryEnterFullscreen = () => {
+      if (hasAutoFullscreenRef.current) return;
+
+      if (art && !art.fullscreen) {
+        try {
+          // 有些瀏覽器 (如 iOS Safari) 可能需要 async 處理
+          const result = (art.fullscreen = true);
+          // 如果返回的是 Promise (雖然 Artplayer 封裝過，但底層可能是)
+          if (result && typeof (result as any).catch === 'function') {
+            (result as any).catch((e: any) => {
+              console.warn('全螢幕請求被拒絕 (Promise):', e);
+            });
+          }
+          // 標記已嘗試
+          hasAutoFullscreenRef.current = true;
+        } catch (err) {
+          console.warn('全螢幕請求失敗:', err);
+        }
+      }
+    };
+
+    // 1. 提早觸發：監聽 play 事件 (最接近用戶點擊的時機)
     art.on('play', () => {
       requestWakeLock();
+      // 在用戶點擊播放時立即嘗試
+      tryEnterFullscreen();
     });
 
-    // 修正：將自動全螢幕邏輯移到 playing 事件，確保真正開始播放
+    // 2. 延遲重試：監聽 playing 事件 (確保影片已準備好)
     art.on('video:playing', () => {
       if (!hasAutoFullscreenRef.current) {
-        hasAutoFullscreenRef.current = true;
-        // 自動進入全螢幕
-        if (art && !art.fullscreen) {
-          try {
-            art.fullscreen = true;
-          } catch (err) {
-            console.warn('自動全螢幕失敗:', err);
-          }
-        }
+        // 延遲 100ms 再試一次，給瀏覽器一點反應時間
+        setTimeout(() => {
+          tryEnterFullscreen();
+        }, 100);
+      }
+    });
+
+    // 3. 互動代理：如果上述都失敗，監聽下一次觸摸
+    // 這是一個終極備案：當用戶再次觸碰螢幕時觸發
+    art.once('touchstart', () => {
+      if (!hasAutoFullscreenRef.current) {
+        tryEnterFullscreen();
+      }
+    });
+
+    // 桌面端點擊也可觸發
+    art.once('click', () => {
+      if (!hasAutoFullscreenRef.current) {
+        tryEnterFullscreen();
       }
     });
 
