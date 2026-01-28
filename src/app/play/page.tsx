@@ -1196,58 +1196,57 @@ function PlayPageClient() {
       (window as any).refreshCustomControls = updateCustomControls;
     });
 
-    // --- 自動全螢幕封裝函數 (含錯誤處理) ---
-    const tryEnterFullscreen = () => {
-      if (hasAutoFullscreenRef.current) return;
+    // --- 自動全螢幕封裝函數 (含輪詢重試) ---
+    const tryEnterFullscreen = (maxRetry = 10) => {
+      // 如果已經是全螢幕或已經標記成功，則停止
+      if (hasAutoFullscreenRef.current || (art && art.fullscreen)) {
+        hasAutoFullscreenRef.current = true;
+        return;
+      }
 
-      if (art && !art.fullscreen) {
+      if (art) {
         try {
           // 有些瀏覽器 (如 iOS Safari) 可能需要 async 處理
           const result = (art.fullscreen = true);
           // 如果返回的是 Promise (雖然 Artplayer 封裝過，但底層可能是)
           if (result && typeof (result as any).catch === 'function') {
-            (result as any).catch((e: any) => {
-              console.warn('全螢幕請求被拒絕 (Promise):', e);
+            (result as any).catch((_e: any) => {
+              // 靜默失敗，等待下一次重試
             });
           }
-          // 標記已嘗試
-          hasAutoFullscreenRef.current = true;
         } catch (err) {
-          console.warn('全螢幕請求失敗:', err);
+          // 靜默失敗
         }
+      }
+
+      // 如果還有重試次數，則繼續輪詢
+      if (maxRetry > 0) {
+        setTimeout(() => tryEnterFullscreen(maxRetry - 1), 500);
       }
     };
 
     // 1. 提早觸發：監聽 play 事件 (最接近用戶點擊的時機)
     art.on('play', () => {
       requestWakeLock();
-      // 在用戶點擊播放時立即嘗試
-      tryEnterFullscreen();
+      // 在用戶點擊播放時立即嘗試，並持續輪詢 5 秒 (10 * 500ms)
+      tryEnterFullscreen(10);
     });
 
     // 2. 延遲重試：監聽 playing 事件 (確保影片已準備好)
     art.on('video:playing', () => {
-      if (!hasAutoFullscreenRef.current) {
-        // 延遲 100ms 再試一次，給瀏覽器一點反應時間
-        setTimeout(() => {
-          tryEnterFullscreen();
-        }, 100);
-      }
+      // 確保至少觸發一次輪詢，以防 play 事件沒抓到
+      tryEnterFullscreen(5);
     });
 
     // 3. 互動代理：如果上述都失敗，監聽下一次觸摸
     // 這是一個終極備案：當用戶再次觸碰螢幕時觸發
     art.once('touchstart', () => {
-      if (!hasAutoFullscreenRef.current) {
-        tryEnterFullscreen();
-      }
+      tryEnterFullscreen(1);
     });
 
     // 桌面端點擊也可觸發
     art.once('click', () => {
-      if (!hasAutoFullscreenRef.current) {
-        tryEnterFullscreen();
-      }
+      tryEnterFullscreen(1);
     });
 
     art.on('pause', () => {

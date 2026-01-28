@@ -2,6 +2,7 @@
 'use client';
 
 import Artplayer from 'artplayer';
+import artplayerPluginChromecast from 'artplayer-plugin-chromecast';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import React from 'react';
 
@@ -79,6 +80,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       const art = new Artplayer({
         ...option,
         container: artRef.current,
+        plugins: [artplayerPluginChromecast({})],
         customType: {
           m3u8: async function (video: HTMLVideoElement, url: string) {
             const { default: Hls } = await import('hls.js');

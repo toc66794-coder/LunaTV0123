@@ -28,6 +28,7 @@
     "@types/crypto-js": "^4.2.2",
     "@upstash/redis": "^1.25.0",
     "artplayer": "^5.2.5",
+    "artplayer-plugin-chromecast": "^1.0.0",
     "bs58": "^6.0.0",
     "clsx": "^2.0.0",
     "crypto-js": "^4.2.0",
