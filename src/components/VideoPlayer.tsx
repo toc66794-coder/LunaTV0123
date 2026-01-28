@@ -715,12 +715,96 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       ...divProps
     } = rest as any;
 
+    // --- 省電模式 Overlay 控制 (DOM 操作以支援全螢幕) ---
+    useEffect(() => {
+      const art = artInstanceRef.current;
+      if (!art || !art.template || !art.template.$container) return;
+
+      const OVERLAY_ID = 'luna-saver-overlay';
+      let overlay = art.template.$container.querySelector(
+        `#${OVERLAY_ID}`
+      ) as HTMLElement;
+
+      if (isDimmed) {
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = OVERLAY_ID;
+          overlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            z-index: 2147483647;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            font-family: system-ui, sans-serif;
+            pointer-events: auto;
+          `;
+          overlay.innerHTML = `
+            <div style="font-size: 24px; margin-bottom: 12px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.2));">⚡</div>
+            <div style="font-size: 14px; font-weight: 500;">省電模式</div>
+            <div style="font-size: 11px; opacity: 0.7; margin-top: 4px;">觸碰喚醒</div>
+          `;
+
+          // 阻擋事件冒泡，避免點擊穿透到播放器
+          const stopEvent = (e: Event) => {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+          };
+
+          overlay.addEventListener('touchstart', stopEvent, { passive: false });
+          overlay.addEventListener(
+            'touchmove',
+            (e) => {
+              e.preventDefault();
+              stopEvent(e);
+            },
+            { passive: false }
+          );
+          overlay.addEventListener('touchend', stopEvent, { passive: false });
+          overlay.addEventListener('click', stopEvent);
+
+          // 點擊任意處喚醒
+          overlay.addEventListener('click', () => {
+            resetSaverTimer();
+          });
+          overlay.addEventListener(
+            'touchstart',
+            () => {
+              resetSaverTimer();
+            },
+            { passive: false }
+          );
+
+          art.template.$container.appendChild(overlay);
+        }
+      } else {
+        if (overlay) {
+          overlay.remove();
+        }
+      }
+
+      // Cleanup function
+      return () => {
+        // 我們不在此移除，因為需要在 isDimmed 變化時處理，
+        // 且 component unmount 時 art 可能已經 destroyed，
+        // 但為了保險起見，可以嘗試移除
+        if (overlay && !isDimmed) overlay.remove();
+      };
+    }, [isDimmed]);
+
     return (
       <div
         className={className}
         style={{
           ...style,
-          position: 'relative', // 確保 Overlay 相對於此外層定位
+          position: 'relative',
           userSelect: 'none',
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
@@ -728,7 +812,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }}
         {...divProps}
       >
-        {/* Artplayer 容器 */}
         <div
           ref={artRef}
           style={{
@@ -736,36 +819,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             height: '100%',
           }}
         />
-
-        {/* 省電黑屏遮罩 (與 Artplayer 平級，確保覆蓋) */}
-        {isDimmed && (
-          <div
-            onClick={(e) => {
-              e.stopPropagation(); // 阻止事件傳遞
-              resetSaverTimer();
-            }}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              backgroundColor: 'black', // 純黑背景
-              zIndex: 99999, // 提高 z-index 確保最高
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'rgba(255, 255, 255, 0.4)',
-              cursor: 'pointer',
-            }}
-          >
-            <div style={{ fontSize: '14px', marginBottom: '8px' }}>
-              🔋 省電模式
-            </div>
-            <div style={{ fontSize: '12px' }}>觸碰喚醒螢幕</div>
-          </div>
-        )}
       </div>
     );
   }
