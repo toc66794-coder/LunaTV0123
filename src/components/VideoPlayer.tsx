@@ -23,10 +23,6 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   lastPlaybackRate: number;
 }
 
-// 開發者測試開關：是否強制讓主播放器 (手機/網頁) 也走 Proxy 測試 Upstash 快取
-// true: 手機也走 Proxy (測試用); false: 手機走直連 (正式環境建議值)
-const FORCED_MOBILE_PROXY = true;
-
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
   (
     {
@@ -234,17 +230,11 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       const art = new Artplayer({
         ...option,
-        url:
-          blockAdEnabledRef.current && FORCED_MOBILE_PROXY
-            ? `/api/m3u8-proxy?url=${encodeURIComponent(option.url)}`
-            : option.url,
+        url: option.url,
         container: artRef.current,
         plugins: [
           artplayerPluginChromecast({
-            // 投屏時始終使用代理伺服器來去廣告 (且現在有 Upstash 快取)
-            url: blockAdEnabledRef.current
-              ? `/api/m3u8-proxy?url=${encodeURIComponent(option.url)}`
-              : option.url,
+            url: option.url,
           }),
         ],
         customType: {
