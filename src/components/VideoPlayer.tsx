@@ -69,6 +69,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       if (saverEnabledRef.current) {
         saverTimerRef.current = setTimeout(() => {
+          console.log('[LunaTV] Timer fired! Dimming screen...');
           setIsDimmed(true);
         }, 5000); // 5秒無操作進入黑屏
       }
@@ -364,7 +365,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             <button onclick="window.toggleSaverMode()" style="width: 32px; height: 32px; border-radius: 50%; border: none; background: ${
               saverOn ? 'rgba(16, 185, 129, 0.9)' : 'rgba(107, 114, 128, 0.7)'
             }; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" title="省電模式 (黑屏)">
-              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
             </button>
           `;
         }
@@ -716,10 +717,10 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
     return (
       <div
-        ref={artRef}
         className={className}
         style={{
           ...style,
+          position: 'relative', // 確保 Overlay 相對於此外層定位
           userSelect: 'none',
           WebkitUserSelect: 'none',
           WebkitTouchCallout: 'none',
@@ -727,10 +728,20 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }}
         {...divProps}
       >
+        {/* Artplayer 容器 */}
+        <div
+          ref={artRef}
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
+        />
+
+        {/* 省電黑屏遮罩 (與 Artplayer 平級，確保覆蓋) */}
         {isDimmed && (
           <div
             onClick={(e) => {
-              e.stopPropagation(); // 阻止事件傳遞給底層播放器
+              e.stopPropagation(); // 阻止事件傳遞
               resetSaverTimer();
             }}
             style={{
@@ -739,21 +750,20 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               left: 0,
               width: '100%',
               height: '100%',
-              backgroundColor: 'black',
-              zIndex: 9999,
+              backgroundColor: 'black', // 純黑背景
+              zIndex: 99999, // 提高 z-index 確保最高
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'rgba(255, 255, 255, 0.3)',
-              userSelect: 'none',
+              color: 'rgba(255, 255, 255, 0.4)',
               cursor: 'pointer',
             }}
           >
             <div style={{ fontSize: '14px', marginBottom: '8px' }}>
-              省電模式 (觸碰喚醒)
+              🔋 省電模式
             </div>
-            <div style={{ fontSize: '12px' }}>投屏與音訊仍在背景執行中</div>
+            <div style={{ fontSize: '12px' }}>觸碰喚醒螢幕</div>
           </div>
         )}
       </div>
