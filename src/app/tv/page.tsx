@@ -348,7 +348,7 @@ export default function TVHomePage() {
       <TVSettingsPanel
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        enabledSources={enabledSources}
+        disabledSources={disabledSources}
         onToggleSource={handleToggleSource}
       />
 

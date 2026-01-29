@@ -2,7 +2,8 @@
 'use client';
 
 import Artplayer from 'artplayer';
-import React, { useCallback,useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+
 // import { useTvFocus } from './TVFocusProvider'; // Temporarily commented out if unused
 
 interface TVVideoPlayerProps {
@@ -127,8 +128,46 @@ export function TVVideoPlayer({
         m3u8: async function (video: HTMLVideoElement, url: string) {
           const { default: Hls } = await import('hls.js');
           if (!Hls) return;
+
+          // Check for ad block setting (default true)
+          let blockAdEnabled = true;
+          if (typeof window !== 'undefined') {
+            const v = localStorage.getItem('enable_blockad');
+            if (v !== null) blockAdEnabled = v === 'true';
+          }
+
+          class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+            constructor(config: any) {
+              super(config);
+              const load = this.load.bind(this);
+              this.load = function (context: any, config: any, callbacks: any) {
+                if (context.type === 'manifest' || context.type === 'level') {
+                  const onSuccess = callbacks.onSuccess;
+                  callbacks.onSuccess = function (
+                    response: any,
+                    stats: any,
+                    context: any
+                  ) {
+                    if (response.data && typeof response.data === 'string') {
+                      response.data = filterAdsFromM3U8(response.data);
+                    }
+                    return onSuccess(response, stats, context, null);
+                  };
+                }
+                load(context, config, callbacks);
+              };
+            }
+          }
+
           if (Hls.isSupported()) {
-            const hls = new Hls();
+            const hls = new Hls({
+              debug: false,
+              enableWorker: true,
+              lowLatencyMode: true,
+              loader: blockAdEnabled
+                ? CustomHlsJsLoader
+                : Hls.DefaultConfig.loader,
+            });
             hls.loadSource(url);
             hls.attachMedia(video);
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -219,147 +258,147 @@ export function TVVideoPlayer({
         </div>
 
         {/* Bottom Bar: Progress & Info */}
-          <div className='absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black via-black/80 to-transparent'>
-            <div className='flex items-center justify-between mb-4'>
-              <span className='text-2xl font-mono text-gray-200'>
-                {formatTime(currentTime)}
-              </span>
-              <span className='text-2xl font-mono text-gray-400'>
-                {formatTime(duration)}
-              </span>
-            </div>
-
-            {/* Progress Bar Container */}
-            <div className='h-4 bg-gray-700 rounded-full overflow-hidden relative mb-8'>
-              <div
-                className='h-full bg-blue-500 transition-all duration-200 ease-linear'
-                style={{ width: `${(currentTime / duration) * 100}%` }}
-              />
-            </div>
-
-            {/* Interactive Controls for Touch/Remote */}
-            <div className='flex items-center justify-center space-x-6 pb-4'>
-              <button
-                data-tv-focusable='true'
-                onClick={() => {
-                  if (artInstance.current) {
-                    artInstance.current.seek = Math.max(
-                      0,
-                      artInstance.current.currentTime - 10
-                    );
-                  }
-                }}
-                className='p-4 rounded-full bg-white/10 hover:bg-white/20 focus:bg-blue-600 transition-all outline-none'
-                title='快退 10s'
-              >
-                <svg
-                  className='w-8 h-8 text-white'
-                  fill='none'
-                  viewBox='0 0 24 24'
-                  stroke='currentColor'
-                >
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z'
-                  />
-                </svg>
-              </button>
-
-              <button
-                data-tv-focusable='true'
-                onClick={() => {
-                  if (artInstance.current) artInstance.current.toggle();
-                }}
-                className='p-6 rounded-full bg-blue-600 hover:bg-blue-500 focus:bg-white focus:text-blue-600 text-white transition-all outline-none transform hover:scale-110 focus:scale-110'
-                title={isPlaying ? '暫停' : '播放'}
-              >
-                {isPlaying ? (
-                  <svg
-                    className='w-10 h-10'
-                    fill='currentColor'
-                    viewBox='0 0 24 24'
-                  >
-                    <path d='M6 4h4v16H6V4zm8 0h4v16h-4V4z' />
-                  </svg>
-                ) : (
-                  <svg
-                    className='w-10 h-10'
-                    fill='currentColor'
-                    viewBox='0 0 24 24'
-                  >
-                    <path d='M8 5v14l11-7z' />
-                  </svg>
-                )}
-              </button>
-
-              <button
-                data-tv-focusable='true'
-                onClick={() => {
-                  if (artInstance.current) {
-                    artInstance.current.seek = Math.min(
-                      duration,
-                      artInstance.current.currentTime + 10
-                    );
-                  }
-                }}
-                className='p-4 rounded-full bg-white/10 hover:bg-white/20 focus:bg-blue-600 transition-all outline-none'
-                title='快進 10s'
-              >
-                <svg
-                  className='w-8 h-8 text-white'
-                  fill='none'
-                  viewBox='0 0 24 24'
-                  stroke='currentColor'
-                >
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M13 10V3L4 14h7v7l9-11h-7z' // Icon placeholder replaced with fast forward if needed, using lightning for now or better
-                  />
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z'
-                  />
-                </svg>
-              </button>
-
-              <button
-                data-tv-focusable='true'
-                onClick={() => setShowMenu(true)}
-                className='p-4 rounded-full bg-white/10 hover:bg-white/20 focus:bg-blue-600 transition-all outline-none ml-4'
-                title='設定'
-              >
-                <svg
-                  className='w-8 h-8 text-white'
-                  fill='none'
-                  viewBox='0 0 24 24'
-                  stroke='currentColor'
-                >
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
-                  />
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M15 12a3 3 0 11-6 0 3 3 0 016 0z'
-                  />
-                </svg>
-              </button>
-            </div>
-            
-            <div className='text-center text-gray-500 text-sm mt-2'>
-              [OK] 暫停/播放 · [←/→] 快退/快進 · [↑] 設定選單
-            </div>
+        <div className='absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black via-black/80 to-transparent'>
+          <div className='flex items-center justify-between mb-4'>
+            <span className='text-2xl font-mono text-gray-200'>
+              {formatTime(currentTime)}
+            </span>
+            <span className='text-2xl font-mono text-gray-400'>
+              {formatTime(duration)}
+            </span>
           </div>
+
+          {/* Progress Bar Container */}
+          <div className='h-4 bg-gray-700 rounded-full overflow-hidden relative mb-8'>
+            <div
+              className='h-full bg-blue-500 transition-all duration-200 ease-linear'
+              style={{ width: `${(currentTime / duration) * 100}%` }}
+            />
+          </div>
+
+          {/* Interactive Controls for Touch/Remote */}
+          <div className='flex items-center justify-center space-x-6 pb-4'>
+            <button
+              data-tv-focusable='true'
+              onClick={() => {
+                if (artInstance.current) {
+                  artInstance.current.seek = Math.max(
+                    0,
+                    artInstance.current.currentTime - 10
+                  );
+                }
+              }}
+              className='p-4 rounded-full bg-white/10 hover:bg-white/20 focus:bg-blue-600 transition-all outline-none'
+              title='快退 10s'
+            >
+              <svg
+                className='w-8 h-8 text-white'
+                fill='none'
+                viewBox='0 0 24 24'
+                stroke='currentColor'
+              >
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z'
+                />
+              </svg>
+            </button>
+
+            <button
+              data-tv-focusable='true'
+              onClick={() => {
+                if (artInstance.current) artInstance.current.toggle();
+              }}
+              className='p-6 rounded-full bg-blue-600 hover:bg-blue-500 focus:bg-white focus:text-blue-600 text-white transition-all outline-none transform hover:scale-110 focus:scale-110'
+              title={isPlaying ? '暫停' : '播放'}
+            >
+              {isPlaying ? (
+                <svg
+                  className='w-10 h-10'
+                  fill='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path d='M6 4h4v16H6V4zm8 0h4v16h-4V4z' />
+                </svg>
+              ) : (
+                <svg
+                  className='w-10 h-10'
+                  fill='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path d='M8 5v14l11-7z' />
+                </svg>
+              )}
+            </button>
+
+            <button
+              data-tv-focusable='true'
+              onClick={() => {
+                if (artInstance.current) {
+                  artInstance.current.seek = Math.min(
+                    duration,
+                    artInstance.current.currentTime + 10
+                  );
+                }
+              }}
+              className='p-4 rounded-full bg-white/10 hover:bg-white/20 focus:bg-blue-600 transition-all outline-none'
+              title='快進 10s'
+            >
+              <svg
+                className='w-8 h-8 text-white'
+                fill='none'
+                viewBox='0 0 24 24'
+                stroke='currentColor'
+              >
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M13 10V3L4 14h7v7l9-11h-7z' // Icon placeholder replaced with fast forward if needed, using lightning for now or better
+                />
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z'
+                />
+              </svg>
+            </button>
+
+            <button
+              data-tv-focusable='true'
+              onClick={() => setShowMenu(true)}
+              className='p-4 rounded-full bg-white/10 hover:bg-white/20 focus:bg-blue-600 transition-all outline-none ml-4'
+              title='設定'
+            >
+              <svg
+                className='w-8 h-8 text-white'
+                fill='none'
+                viewBox='0 0 24 24'
+                stroke='currentColor'
+              >
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'
+                />
+                <path
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  strokeWidth={2}
+                  d='M15 12a3 3 0 11-6 0 3 3 0 016 0z'
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div className='text-center text-gray-500 text-sm mt-2'>
+            [OK] 暫停/播放 · [←/→] 快退/快進 · [↑] 設定選單
+          </div>
+        </div>
       </div>
 
       {/* Settings Menu Overlay (Toggled by UP arrow) */}

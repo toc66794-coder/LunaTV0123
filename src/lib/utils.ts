@@ -231,3 +231,25 @@ export function cleanHtmlTags(text: string): string {
   // 使用 he 库解码 HTML 实体
   return he.decode(cleanedText);
 }
+
+/**
+ * 过滤 M3U8 内容中的广告片段 (特别是 #EXT-X-DISCONTINUITY)
+ */
+export function filterAdsFromM3U8(m3u8Content: string): string {
+  if (!m3u8Content) return '';
+
+  // 按行分割M3U8内容
+  const lines = m3u8Content.split('\n');
+  const filteredLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 只过滤#EXT-X-DISCONTINUITY标识
+    if (!line.includes('#EXT-X-DISCONTINUITY')) {
+      filteredLines.push(line);
+    }
+  }
+
+  return filteredLines.join('\n');
+}

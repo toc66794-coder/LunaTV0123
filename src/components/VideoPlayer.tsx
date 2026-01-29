@@ -6,6 +6,8 @@ import artplayerPluginChromecast from 'artplayer-plugin-chromecast';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import React from 'react';
 
+import { filterAdsFromM3U8 } from '@/lib/utils';
+
 interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   option: any;
   getInstance: (art: any) => void;
@@ -242,6 +244,13 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             const { default: Hls } = await import('hls.js');
             if (!Hls) return;
 
+            // Check for ad block setting (default true)
+            let blockAdEnabled = true;
+            if (typeof window !== 'undefined') {
+              const v = localStorage.getItem('enable_blockad');
+              if (v !== null) blockAdEnabled = v === 'true';
+            }
+
             class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               constructor(config: any) {
                 super(config);
@@ -280,7 +289,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               maxBufferLength: 30,
               backBufferLength: 30,
               maxBufferSize: 60 * 1000 * 1000,
-              loader: blockAdEnabledRef.current
+              loader: blockAdEnabled
                 ? CustomHlsJsLoader
                 : Hls.DefaultConfig.loader,
             });
