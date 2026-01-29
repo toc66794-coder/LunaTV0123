@@ -38,28 +38,29 @@ export default function TVHomePage() {
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [disabledSources, setDisabledSources] = useState<string[]>([]);
 
   // Check Auth
   useEffect(() => {
-    // 載入設置
-    const saved = localStorage.getItem('tv_source_filter');
+    // 載入設置 (改用黑名單邏輯以支援自動添加新源)
+    const saved = localStorage.getItem('tv_disabled_sources');
     if (saved) {
       try {
-        setEnabledSources(JSON.parse(saved));
+        setDisabledSources(JSON.parse(saved));
       } catch (e) {
         /* ignore */
       }
     } else {
-      fetch('/api/sources')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            const keys = data.data.map((s: any) => s.key);
-            setEnabledSources(keys);
-            localStorage.setItem('tv_source_filter', JSON.stringify(keys));
-          }
-        });
+      // 兼容舊版設定：如果發現舊版白名單，則嘗試遷移或直接重置
+      const oldSaved = localStorage.getItem('tv_source_filter');
+      if (oldSaved) {
+        // 舊版存在，為了避免混亂，直接重置為全部啟用 (空黑名單)
+        // 或者我們可以嘗試計算黑名單，但這需要獲取所有源，比較複雜且容易出錯
+        // 用戶已經遇到問題，直接重置是最好的
+        localStorage.removeItem('tv_source_filter');
+      }
+      // 默認全部啟用 (空黑名單)
+      setDisabledSources([]);
     }
 
     // Dynamic import to avoid SSR issues with document.cookie
@@ -72,11 +73,11 @@ export default function TVHomePage() {
   }, []);
 
   const handleToggleSource = (key: string) => {
-    setEnabledSources((prev) => {
+    setDisabledSources((prev) => {
       const next = prev.includes(key)
-        ? prev.filter((k) => k !== key)
-        : [...prev, key];
-      localStorage.setItem('tv_source_filter', JSON.stringify(next));
+        ? prev.filter((k) => k !== key) // 如果在黑名單中，移除 (啟用)
+        : [...prev, key]; // 如果不在黑名單中，加入 (禁用)
+      localStorage.setItem('tv_disabled_sources', JSON.stringify(next));
       return next;
     });
   };
@@ -182,10 +183,10 @@ export default function TVHomePage() {
         const searchData = await searchRes.json();
         let results = searchData.results || [];
 
-        // 0. Filter by enabled sources
-        if (enabledSources.length > 0) {
-          results = results.filter((r: any) =>
-            enabledSources.includes(r.source)
+        // 0. Filter by disabled sources (Blacklist)
+        if (disabledSources.length > 0) {
+          results = results.filter(
+            (r: any) => !disabledSources.includes(r.source)
           );
         }
 

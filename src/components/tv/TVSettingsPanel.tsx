@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 
+import { ensureFocusManager } from './TVFocusProvider';
+
 interface Source {
   key: string;
   name: string;
@@ -24,6 +26,11 @@ export function TVSettingsPanel({
   const [availableSources, setAvailableSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // 初始化全域焦點管理器
+  useEffect(() => {
+    ensureFocusManager();
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       setLoading(true);
@@ -41,6 +48,16 @@ export function TVSettingsPanel({
   const handleClearCache = () => {
     if (confirm('確定要清除所有快取數據並重新整理嗎？')) {
       localStorage.clear();
+      window.location.reload();
+    }
+  };
+
+  const handleResetSources = () => {
+    if (
+      confirm('確定要重置並啟用所有可用播放源嗎？這將解決「沒有資源」的問題。')
+    ) {
+      localStorage.removeItem('tv_source_filter');
+      localStorage.removeItem('tv_disabled_sources');
       window.location.reload();
     }
   };
@@ -79,12 +96,28 @@ export function TVSettingsPanel({
                     >
                       <span className='truncate mr-2'>{source.name}</span>
                       <div
-                        className={`w-4 h-4 rounded-full border ${
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center ${
                           isEnabled
                             ? 'bg-blue-500 border-blue-500'
                             : 'border-gray-500'
                         }`}
-                      ></div>
+                      >
+                        {isEnabled && (
+                          <svg
+                            className='w-3 h-3 text-white'
+                            fill='none'
+                            viewBox='0 0 24 24'
+                            stroke='currentColor'
+                          >
+                            <path
+                              strokeLinecap='round'
+                              strokeLinejoin='round'
+                              strokeWidth={3}
+                              d='M5 13l4 4L19 7'
+                            />
+                          </svg>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -102,7 +135,15 @@ export function TVSettingsPanel({
             <h3 className='text-xl font-semibold text-gray-300 mb-4'>
               系統操作
             </h3>
-            <div className='flex gap-4'>
+            <div className='flex flex-wrap gap-4'>
+              <button
+                data-tv-focusable='true'
+                onClick={handleResetSources}
+                className='px-6 py-3 rounded-xl bg-blue-900/40 border border-blue-800 text-blue-200 focus:bg-blue-800 focus:text-white transition-all outline-none'
+              >
+                重置並啟用所有源
+              </button>
+
               <button
                 data-tv-focusable='true'
                 onClick={handleClearCache}

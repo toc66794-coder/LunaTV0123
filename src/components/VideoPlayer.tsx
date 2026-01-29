@@ -242,6 +242,33 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             const { default: Hls } = await import('hls.js');
             if (!Hls) return;
 
+            class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+              constructor(config: any) {
+                super(config);
+                const load = this.load.bind(this);
+                this.load = function (
+                  context: any,
+                  config: any,
+                  callbacks: any
+                ) {
+                  if (context.type === 'manifest' || context.type === 'level') {
+                    const onSuccess = callbacks.onSuccess;
+                    callbacks.onSuccess = function (
+                      response: any,
+                      stats: any,
+                      context: any
+                    ) {
+                      if (response.data && typeof response.data === 'string') {
+                        response.data = filterAdsFromM3U8(response.data);
+                      }
+                      return onSuccess(response, stats, context, null);
+                    };
+                  }
+                  load(context, config, callbacks);
+                };
+              }
+            }
+
             if (video.hls) {
               video.hls.destroy();
             }
@@ -253,6 +280,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               maxBufferLength: 30,
               backBufferLength: 30,
               maxBufferSize: 60 * 1000 * 1000,
+              loader: blockAdEnabledRef.current
+                ? CustomHlsJsLoader
+                : Hls.DefaultConfig.loader,
             });
 
             hls.loadSource(url);
