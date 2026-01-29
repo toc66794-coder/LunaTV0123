@@ -4,6 +4,8 @@
 import Artplayer from 'artplayer';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { filterAdsFromM3U8 } from '@/lib/utils';
+
 // import { useTvFocus } from './TVFocusProvider'; // Temporarily commented out if unused
 
 interface TVVideoPlayerProps {
