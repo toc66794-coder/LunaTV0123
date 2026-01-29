@@ -8,39 +8,67 @@ import { DoubanItem, SearchResult } from '@/lib/types';
 import { TVVideoCard } from '@/components/tv/TVVideoCard';
 import { TVVideoPlayer } from '@/components/tv/TVVideoPlayer';
 
-export default function TVHomePage() {
-  const [selectedMovie, setSelectedMovie] = useState<DoubanItem | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  // Auth State
+  const [user, setUser] = useState<string | null>(null);
 
-  // Real Data State
-  const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
-  const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
-  const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Filter State
+  const [filterMode, setFilterMode] = useState<'all' | 'movie' | 'tv' | 'anime' | 'variety'>('all');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  // Video Source & Episodes State
-  const [isSearchingSources, setIsSearchingSources] = useState(false);
-  const [videoDetail, setVideoDetail] = useState<SearchResult | null>(null);
-  const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+  // Search Fallback State
+  const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
+
+  // Check Auth
+  useEffect(() => {
+    // Dynamic import to avoid SSR issues with document.cookie
+    import('@/lib/auth').then(({ getAuthInfoFromBrowserCookie }) => {
+      const info = getAuthInfoFromBrowserCookie();
+      if (info?.username) {
+        setUser(info.username);
+      }
+    });
+  }, []);
+
+  const handleLogout = () => {
+    document.cookie = 'auth=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    setUser(null);
+  };
 
   // Fetch Data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [movies, tvs, anims] = await Promise.all([
-          getDoubanCategories({
-            kind: 'movie',
-            category: '热门',
-            type: '全部',
-          }),
-          getDoubanCategories({ kind: 'tv', category: '热门', type: '电视剧' }),
-          getDoubanCategories({ kind: 'tv', category: '热门', type: '动漫' }),
-        ]);
+        // Reset current lists
+        setHotMovies([]);
+        setHotTvShows([]);
+        setHotAnimation([]);
 
-        if (movies.code === 200) setHotMovies(movies.list);
-        if (tvs.code === 200) setHotTvShows(tvs.list);
-        if (anims.code === 200) setHotAnimation(anims.list);
+        // Determine what to fetch based on filterMode
+        const promises = [];
+        
+        if (filterMode === 'all' || filterMode === 'movie') {
+          promises.push(getDoubanCategories({ kind: 'movie', category: '热门', type: '全部' })
+            .then(res => res.code === 200 ? setHotMovies(res.list) : null));
+        }
+
+        if (filterMode === 'all' || filterMode === 'tv') {
+          promises.push(getDoubanCategories({ kind: 'tv', category: '热门', type: '电视剧' })
+            .then(res => res.code === 200 ? setHotTvShows(res.list) : null));
+        }
+
+        if (filterMode === 'all' || filterMode === 'anime') {
+          promises.push(getDoubanCategories({ kind: 'tv', category: '热门', type: '动漫' })
+            .then(res => res.code === 200 ? setHotAnimation(res.list) : null));
+        }
+        
+        if (filterMode === 'all' || filterMode === 'variety') {
+             // Optional: Add variety support if needed, mapped to 'show'
+             promises.push(getDoubanCategories({ kind: 'tv', category: '热门', type: '综艺' })
+            .then(res => res.code === 200 ? setHotTvShows(prev => [...prev, ...res.list]) : null));
+        }
+
+        await Promise.all(promises);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('Failed to fetch TV data', err);
@@ -50,41 +78,60 @@ export default function TVHomePage() {
     };
 
     fetchData();
-  }, []);
+  }, [filterMode]);
 
   // Fetch Video Source when a movie is selected
   useEffect(() => {
     if (!selectedMovie) {
       setVideoDetail(null);
       setSelectedEpisodeIndex(0);
+      setManualSearchResults([]);
       return;
     }
 
     const searchSource = async () => {
       try {
         setIsSearchingSources(true);
-        // 1. 搜尋播放源
+        setVideoDetail(null);
+        setManualSearchResults([]);
+
+        // 1. Search for sources
         const searchRes = await fetch(
           `/api/search?q=${encodeURIComponent(selectedMovie.title)}`
         );
         const searchData = await searchRes.json();
         const results = searchData.results || [];
 
-        // 2. 匹配最精確的源 (標題一致且年份接近)
-        const match = results.find(
-          (r: any) =>
-            r.title.includes(selectedMovie.title) ||
-            selectedMovie.title.includes(r.title)
+        if (results.length === 0) {
+            setIsSearchingSources(false);
+            return;
+        }
+
+        // 2. Fuzzy Matching Strategy
+        // Priority 1: Exact Title Match
+        let match = results.find(
+          (r: any) => r.title === selectedMovie.title
         );
 
+        // Priority 2: Title inclusion (ignore spaces/case)
+        if (!match) {
+            const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+            const target = normalize(selectedMovie.title);
+            match = results.find((r: any) => normalize(r.title).includes(target) || target.includes(normalize(r.title)));
+        }
+
         if (match) {
-          // 3. 獲取詳細集數資訊
+          // 3. Fetch Details
           const detailRes = await fetch(
             `/api/detail?source=${match.source}&id=${match.id}`
           );
           const detailData = await detailRes.json();
           setVideoDetail(detailData);
+        } else {
+            // If automatic matching fails or is unsure, populate manual list
+            setManualSearchResults(results);
         }
+
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('Failed to search sources', err);
@@ -96,23 +143,63 @@ export default function TVHomePage() {
     searchSource();
   }, [selectedMovie]);
 
+  const handleManualSelect = async (source: any) => {
+      try {
+          setIsSearchingSources(true);
+          const detailRes = await fetch(
+            `/api/detail?source=${source.source}&id=${source.id}`
+          );
+          const detailData = await detailRes.json();
+          setVideoDetail(detailData);
+          setManualSearchResults([]); // Clear manual list after selection
+      } catch(e) {
+          console.error(e);
+      } finally {
+          setIsSearchingSources(false);
+      }
+  };
+
   return (
-    <div className='flex flex-col space-y-12 p-10 pb-20'>
-      {/* 頂部導航欄 */}
-      <header className='flex items-center justify-between'>
+    <div className='flex flex-col space-y-12 p-10 pb-20 relative'>
+      {/* Top Navigation */}
+      <header className='flex items-center justify-between z-20 relative'>
         <h1 className='text-4xl font-extrabold tracking-tighter text-blue-500'>
           LunaTV{' '}
           <span className='text-white text-2xl ml-2 font-normal opacity-50'>
             TV Mode
           </span>
         </h1>
-        <div className='flex space-x-6'>
+        <div className='flex items-center space-x-6'>
+          {/* User Info */}
+          {user ? (
+            <div className='flex items-center space-x-4 bg-gray-900/80 px-4 py-2 rounded-full border border-gray-700'>
+                <span className='text-gray-300'>Hi, {user}</span>
+                <button 
+                    data-tv-focusable='true'
+                    onClick={handleLogout}
+                    className='text-sm text-red-400 hover:text-red-300 focus:text-white px-2 py-1 rounded'
+                >
+                    登出
+                </button>
+            </div>
+          ) : (
+            <div className='px-4 py-2 text-gray-500'>未登入</div>
+          )}
+
           <button
             data-tv-focusable='true'
-            className='px-6 py-2 rounded-full border-2 border-gray-800 focus:border-blue-500 focus:bg-blue-600 outline-none transition-all'
+            className='px-6 py-2 rounded-full border-2 border-gray-800 focus:border-blue-500 focus:bg-blue-600 outline-none transition-all flex items-center gap-2'
+            onClick={() => setIsFilterOpen(!isFilterOpen)}
           >
-            搜尋
+            <span>分類: {
+                filterMode === 'all' ? '全部' : 
+                filterMode === 'movie' ? '電影' : 
+                filterMode === 'tv' ? '電視劇' : 
+                filterMode === 'anime' ? '動漫' : '綜藝'
+            }</span>
+            <svg className={`w-4 h-4 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
           </button>
+          
           <button
             data-tv-focusable='true'
             className='px-6 py-2 rounded-full border-2 border-gray-800 focus:border-blue-500 focus:bg-blue-600 outline-none transition-all'
@@ -122,6 +209,34 @@ export default function TVHomePage() {
         </div>
       </header>
 
+      {/* Filter Dropdown (Visual Only for TV, mapped to Focus) */}
+      {isFilterOpen && (
+          <div className='absolute top-24 right-10 bg-gray-900 border border-gray-700 rounded-xl p-2 flex flex-col gap-2 z-30 shadow-2xl animate-in fade-in slide-in-from-top-4'>
+              {[
+                  { id: 'all', label: '全部' },
+                  { id: 'movie', label: '電影' },
+                  { id: 'tv', label: '電視劇' },
+                  { id: 'anime', label: '動漫' },
+                  { id: 'variety', label: '綜藝' }
+              ].map((bg) => (
+                  <button
+                    key={bg.id}
+                    data-tv-focusable='true'
+                    autoFocus={filterMode === bg.id}
+                    className={`px-8 py-3 rounded-lg text-left text-lg transition-colors ${
+                        filterMode === bg.id ? 'bg-blue-600 text-white' : 'hover:bg-gray-800 text-gray-300'
+                    } focus:bg-blue-500 focus:text-white outline-none`}
+                    onClick={() => {
+                        setFilterMode(bg.id as any);
+                        setIsFilterOpen(false);
+                    }}
+                  >
+                      {bg.label}
+                  </button>
+              ))}
+          </div>
+      )}
+
       {/* Loading Skeleton or Real Data */}
       {loading ? (
         <div className='text-2xl text-gray-500 animate-pulse'>
@@ -130,6 +245,7 @@ export default function TVHomePage() {
       ) : (
         <>
           {/* 熱門電影 */}
+          {(filterMode === 'all' || filterMode === 'movie') && hotMovies.length > 0 && (
           <section>
             <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-blue-500 pl-4'>
               熱門電影
@@ -144,8 +260,10 @@ export default function TVHomePage() {
               ))}
             </div>
           </section>
+          )}
 
-          {/* 熱門劇集 */}
+          {/* 熱門劇集/綜藝 */}
+          {(filterMode === 'all' || filterMode === 'tv' || filterMode === 'variety') && hotTvShows.length > 0 && (
           <section>
             <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-green-500 pl-4'>
               熱門劇集
@@ -160,8 +278,10 @@ export default function TVHomePage() {
               ))}
             </div>
           </section>
+          )}
 
           {/* 熱門動漫 */}
+          {(filterMode === 'all' || filterMode === 'anime') && hotAnimation.length > 0 && (
           <section>
             <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-pink-500 pl-4'>
               熱門動漫
@@ -176,6 +296,7 @@ export default function TVHomePage() {
               ))}
             </div>
           </section>
+          )}
         </>
       )}
 
@@ -196,35 +317,63 @@ export default function TVHomePage() {
                 {selectedMovie.rate ? `${selectedMovie.rate}分` : '暫無評分'}
               </p>
 
-              {/* 集數選擇列表 */}
+              {/* 播放區域邏輯 */}
               <div className='space-y-4'>
                 <h3 className='text-xl font-semibold text-blue-400'>
-                  {isSearchingSources ? '正在搜尋線路...' : '播放列表'}
+                  {isSearchingSources ? '正在搜尋線路...' : 
+                   videoDetail ? '播放列表' : 
+                   manualSearchResults.length > 0 ? '請選擇可用片源 (自動匹配失敗)' : '暫無可用線路'}
                 </h3>
-                <div className='flex flex-wrap gap-4 max-h-[300px] overflow-y-auto pr-4 scrollbar-hide'>
-                  {videoDetail?.episodes?.map((ep: string, index: number) => (
-                    <button
-                      key={index}
-                      data-tv-focusable='true'
-                      className={`px-8 py-3 rounded-xl text-xl font-medium border-2 transition-all outline-none ${
-                        selectedEpisodeIndex === index
-                          ? 'border-blue-500 bg-blue-600'
-                          : 'border-gray-800 bg-gray-900 focus:border-blue-400 focus:bg-gray-800'
-                      }`}
-                      onClick={() => {
-                        setSelectedEpisodeIndex(index);
-                        setIsPlaying(true);
-                      }}
-                    >
-                      {videoDetail.episodes.length > 1
-                        ? `第 ${index + 1} 集`
-                        : '立即播放'}
-                    </button>
-                  ))}
-                  {!isSearchingSources && !videoDetail && (
-                    <p className='text-gray-500 italic'>暫無可用線路</p>
-                  )}
-                </div>
+                
+                {/* 1. 正常顯示集數 */}
+                {videoDetail && (
+                    <div className='flex flex-wrap gap-4 max-h-[300px] overflow-y-auto pr-4 scrollbar-hide'>
+                    {videoDetail.episodes?.map((ep: string, index: number) => (
+                        <button
+                        key={index}
+                        data-tv-focusable='true'
+                        className={`px-8 py-3 rounded-xl text-xl font-medium border-2 transition-all outline-none ${
+                            selectedEpisodeIndex === index
+                            ? 'border-blue-500 bg-blue-600'
+                            : 'border-gray-800 bg-gray-900 focus:border-blue-400 focus:bg-gray-800'
+                        }`}
+                        onClick={() => {
+                            setSelectedEpisodeIndex(index);
+                            setIsPlaying(true);
+                        }}
+                        >
+                        {videoDetail.episodes.length > 1
+                            ? `第 ${index + 1} 集`
+                            : '立即播放'}
+                        </button>
+                    ))}
+                    </div>
+                )}
+
+                {/* 2. 顯示手動搜尋結果 (Fallback) */}
+                {!videoDetail && manualSearchResults.length > 0 && (
+                    <div className='flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-4'>
+                        {manualSearchResults.map((res: any, idx: number) => (
+                            <button
+                                key={idx}
+                                data-tv-focusable='true'
+                                className='px-6 py-4 rounded-xl text-left border-2 border-gray-800 hover:border-yellow-500 focus:border-yellow-500 bg-gray-900 transition-all flex justify-between'
+                                onClick={() => handleManualSelect(res)}
+                            >
+                                <span className='text-lg font-bold text-white'>{res.title}</span>
+                                <span className='text-gray-400'>{res.type_name} · {res.year}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                
+                {/* 3. 真的沒救了 */}
+                {!isSearchingSources && !videoDetail && manualSearchResults.length === 0 && (
+                     <div className='p-6 bg-red-900/20 border border-red-500/30 rounded-xl'>
+                        <p className='text-red-400 text-xl'>抱歉，找不到 "{selectedMovie.title}" 的相關播放資源。</p>
+                     </div>
+                )}
+
               </div>
 
               <div className='flex space-x-6 pt-8'>
