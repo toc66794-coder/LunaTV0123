@@ -85,7 +85,9 @@ export interface IStorage {
   clearAllData(): Promise<void>;
 
   // 通用鍵值存取 (快取等使用)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   get(userName: string, key: string): Promise<any | null>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   set(userName: string, key: string, value: any, ttl?: number): Promise<void>;
   delete(userName: string, key: string): Promise<void>;
 }

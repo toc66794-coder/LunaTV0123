@@ -20,6 +20,7 @@ export default function TVHomePage() {
 
   // Player State
   const [isPlaying, setIsPlaying] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [videoDetail, setVideoDetail] = useState<any>(null);
   const [isSearchingSources, setIsSearchingSources] = useState(false);
   const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
@@ -34,6 +35,7 @@ export default function TVHomePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Search Fallback State
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
 
   // Settings State
@@ -186,6 +188,7 @@ export default function TVHomePage() {
         // 0. Filter by disabled sources (Blacklist)
         if (disabledSources.length > 0) {
           results = results.filter(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (r: any) => !disabledSources.includes(r.source)
           );
         }
@@ -197,6 +200,7 @@ export default function TVHomePage() {
 
         // 2. Fuzzy Matching Strategy
         // Priority 1: Exact Title Match
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let match = results.find((r: any) => r.title === selectedMovie.title);
 
         // Priority 2: Title inclusion (ignore spaces/case)
@@ -204,6 +208,7 @@ export default function TVHomePage() {
           const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
           const target = normalize(selectedMovie.title);
           match = results.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (r: any) =>
               normalize(r.title).includes(target) ||
               target.includes(normalize(r.title))
@@ -230,8 +235,9 @@ export default function TVHomePage() {
     };
 
     searchSource();
-  }, [selectedMovie]);
+  }, [selectedMovie, disabledSources]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleManualSelect = async (source: any) => {
     try {
       setIsSearchingSources(true);
@@ -242,6 +248,7 @@ export default function TVHomePage() {
       setVideoDetail(detailData);
       setManualSearchResults([]); // Clear manual list after selection
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.error(e);
     } finally {
       setIsSearchingSources(false);
@@ -365,6 +372,7 @@ export default function TVHomePage() {
                   : 'hover:bg-gray-800 text-gray-300'
               } focus:bg-blue-500 focus:text-white outline-none`}
               onClick={() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 setFilterMode(bg.id as any);
                 setIsFilterOpen(false);
               }}
@@ -500,6 +508,7 @@ export default function TVHomePage() {
                 {/* 2. 顯示手動搜尋結果 (Fallback) */}
                 {!videoDetail && manualSearchResults.length > 0 && (
                   <div className='flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-4'>
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {manualSearchResults.map((res: any, idx: number) => (
                       <button
                         key={idx}

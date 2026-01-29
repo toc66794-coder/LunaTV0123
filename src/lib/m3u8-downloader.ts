@@ -36,6 +36,7 @@ async function resolveMediaPlaylist(
       const absoluteUrl = bestStreamUrl.startsWith('http')
         ? bestStreamUrl
         : new URL(bestStreamUrl, m3u8Url).href;
+      // eslint-disable-next-line no-console
       console.log('解析到 Master Playlist，選擇最高質量流:', absoluteUrl);
       return resolveMediaPlaylist(absoluteUrl); // 遞迴解析子列表
     }
@@ -59,6 +60,7 @@ function parseSegments(content: string, baseUrl: string): string[] {
         const url = new URL(trimmed, baseUrlObj.href);
         tsUrls.push(url.href);
       } catch (e) {
+        // eslint-disable-next-line no-console
         console.warn('URL 解析失敗:', trimmed);
       }
     }
@@ -83,6 +85,7 @@ export async function downloadM3U8InBrowser(
     const tsUrls = parseSegments(mediaContent, finalMediaUrl);
     if (tsUrls.length === 0) throw new Error('未找到有效的視頻片段地址');
 
+    // eslint-disable-next-line no-console
     console.log(`開始下載 ${tsUrls.length} 個片段...`);
 
     // 3. 併發/順序下載片段
@@ -109,6 +112,7 @@ export async function downloadM3U8InBrowser(
         const progress = ((i + 1) / tsUrls.length) * 100;
         onProgress?.(progress, i + 1, tsUrls.length);
       } catch (err) {
+        // eslint-disable-next-line no-console
         console.error(`片段 ${i} 下載失敗:`, err);
         failedCount++;
         // 如果失敗比例過高 (>20%)，中斷下載
@@ -146,6 +150,7 @@ export async function downloadM3U8InBrowser(
     setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
     return { success: true };
   } catch (error: any) {
+    // eslint-disable-next-line no-console
     console.error('M3U8 下載核心錯誤:', error);
     return { success: false, error: error.message || '下載失敗' };
   }

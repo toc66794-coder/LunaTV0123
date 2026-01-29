@@ -20,6 +20,7 @@ export default function DownloadGuide({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('複製失敗:', error);
     }
   };
@@ -31,6 +32,7 @@ export default function DownloadGuide({
       setCopiedCommand(true);
       setTimeout(() => setCopiedCommand(false), 2000);
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('複製失敗:', error);
     }
   };
