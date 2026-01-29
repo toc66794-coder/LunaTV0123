@@ -28,6 +28,11 @@ export function TVFocusProvider({ children }: { children: React.ReactNode }) {
 
 // Singleton pattern to manage focus listener
 let isFocusManagerInitialized = false;
+let focusScopeEl: HTMLElement | null = null;
+
+export const setFocusScope = (el: HTMLElement | null) => {
+  focusScopeEl = el;
+};
 
 export const ensureFocusManager = () => {
   if (typeof window === 'undefined') return;
@@ -45,9 +50,12 @@ export const ensureFocusManager = () => {
       return;
     }
 
-    // 獲取所有可聚焦元素
+    // 獲取所有可聚焦元素（支援焦點範圍）
+    const query = focusScopeEl
+      ? focusScopeEl.querySelectorAll.bind(focusScopeEl)
+      : document.querySelectorAll.bind(document);
     const focusableElements = Array.from(
-      document.querySelectorAll(
+      query(
         '[data-tv-focusable="true"]:not([disabled]):not([style*="display: none"])'
       )
     ) as HTMLElement[];

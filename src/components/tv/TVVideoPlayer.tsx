@@ -6,6 +6,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { filterAdsFromM3U8 } from '@/lib/utils';
 
+import { setFocusScope } from './TVFocusProvider';
+
 // import { useTvFocus } from './TVFocusProvider'; // Temporarily commented out if unused
 
 interface TVVideoPlayerProps {
@@ -34,6 +36,7 @@ export function TVVideoPlayer({
   const [loading, setLoading] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [showMenu, setShowMenu] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   // Timer for hiding controls
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
@@ -91,6 +94,21 @@ export function TVVideoPlayer({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [duration, onNext, onClose, wakeControls, showMenu]);
+
+  // Focus scope management: when player overlay mounts, restrict TV focus to overlay
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (el) {
+      setFocusScope(el);
+      const firstFocusable = el.querySelector(
+        '[data-tv-focusable="true"]'
+      ) as HTMLElement | null;
+      if (firstFocusable) firstFocusable.focus();
+    }
+    return () => {
+      setFocusScope(null);
+    };
+  }, []);
 
   // Initialize Player
   useEffect(() => {
@@ -219,7 +237,8 @@ export function TVVideoPlayer({
 
       {/* TV Custom Overlay */}
       <div
-        className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${
+        ref={overlayRef}
+        className={`absolute inset-0 pointer-events-auto transition-opacity duration-300 ${
           showControls ? 'opacity-100' : 'opacity-0'
         }`}
         style={{
