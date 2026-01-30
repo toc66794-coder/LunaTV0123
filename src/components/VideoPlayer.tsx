@@ -576,7 +576,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       let longPressTimer: NodeJS.Timeout | null = null;
       let speedBeforeLongPress = 1;
       let lastTapTime = 0;
-      let lastTapSide: 'left' | 'right' | null = null;
+      let lastTapSide: 'left' | 'right' | 'middle' | null = null;
       let currentBrightness = 100; // 內部維護精確亮度值
 
       const $container = art.template.$container;
@@ -764,9 +764,10 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
 
-          let side: 'left' | 'right' | null = null;
-          if (xPercent < 0.25) side = 'left';
-          else if (xPercent > 0.75) side = 'right';
+          let side: 'left' | 'right' | 'middle' | null = null;
+          if (xPercent < 0.33) side = 'left';
+          else if (xPercent > 0.66) side = 'right';
+          else side = 'middle';
 
           // 檢測雙擊
           if (now - lastTapTime < 300 && lastTapSide === side) {
@@ -781,6 +782,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             } else if (side === 'right') {
               art.seek = Math.min(art.duration, art.currentTime + 10);
               art.notice.show = '⏩ 快進 10 秒';
+            } else if (side === 'middle') {
+              art.toggle();
             }
 
             lastTapTime = 0;
