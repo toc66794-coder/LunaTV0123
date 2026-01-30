@@ -389,6 +389,14 @@ export class UpstashRedisStorage implements IStorage {
     const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
     await withRetry(() => this.client.del(fullKey));
   }
+
+  async mget(userName: string, keys: string[]): Promise<any[]> {
+    if (keys.length === 0) return [];
+    const fullKeys = keys.map((key) =>
+      userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`
+    );
+    return withRetry(() => this.client.mget(fullKeys));
+  }
 }
 
 // 单例 Upstash Redis 客户端

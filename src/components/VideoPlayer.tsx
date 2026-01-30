@@ -3,8 +3,9 @@
 
 import Artplayer from 'artplayer';
 import artplayerPluginChromecast from 'artplayer-plugin-chromecast';
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import React from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+
+import { filterAdsFromM3U8 } from '@/lib/utils';
 
 interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   option: any;
@@ -21,6 +22,7 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   downloadTasks: any;
   lastVolume: number;
   lastPlaybackRate: number;
+  fullTitle?: string;
 }
 
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(

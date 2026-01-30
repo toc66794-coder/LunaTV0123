@@ -517,4 +517,13 @@ export abstract class BaseRedisStorage implements IStorage {
     const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
     await this.withRetry(() => this.client.del(fullKey));
   }
+
+  async mget(userName: string, keys: string[]): Promise<any[]> {
+    if (keys.length === 0) return [];
+    const fullKeys = keys.map((key) =>
+      userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`
+    );
+    const values = await this.withRetry(() => this.client.mGet(fullKeys));
+    return values.map((val) => (val ? JSON.parse(val) : null));
+  }
 }

@@ -29,6 +29,11 @@ export function TVFocusProvider({ children }: { children: React.ReactNode }) {
 // Singleton pattern to manage focus listener
 let isFocusManagerInitialized = false;
 
+export const setFocusScope = (scope: string | HTMLElement | null) => {
+  // Placeholder for focus scope management
+  console.log('Setting focus scope:', scope);
+};
+
 export const ensureFocusManager = () => {
   if (typeof window === 'undefined') return;
   if (isFocusManagerInitialized) return;
@@ -36,7 +41,7 @@ export const ensureFocusManager = () => {
   isFocusManagerInitialized = true;
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    // 忽略輸入框
+    // Ignore inputs
     if (
       ['INPUT', 'TEXTAREA'].includes(
         (document.activeElement as HTMLElement).tagName

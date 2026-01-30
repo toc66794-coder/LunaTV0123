@@ -85,9 +85,12 @@ export interface IStorage {
   clearAllData(): Promise<void>;
 
   // 通用鍵值存取 (快取等使用)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   get(userName: string, key: string): Promise<any | null>;
   set(userName: string, key: string, value: any, ttl?: number): Promise<void>;
   delete(userName: string, key: string): Promise<void>;
+  mget(userName: string, keys: string[]): Promise<any[]>;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 // 搜索结果数据结构
