@@ -38,6 +38,7 @@ export default function TVHomePage() {
   // Search Fallback State
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
+  const [hiddenResultsCount, setHiddenResultsCount] = useState(0);
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -173,6 +174,7 @@ export default function TVHomePage() {
       setVideoDetail(null);
       setSelectedEpisodeIndex(0);
       setManualSearchResults([]);
+      setHiddenResultsCount(0);
       return;
     }
 
@@ -181,6 +183,7 @@ export default function TVHomePage() {
         setIsSearchingSources(true);
         setVideoDetail(null);
         setManualSearchResults([]);
+        setHiddenResultsCount(0);
 
         // 1. Search for sources
         const searchRes = await fetch(
@@ -215,6 +218,7 @@ export default function TVHomePage() {
             results.length,
             'sources'
           );
+          setHiddenResultsCount(beforeFilter - results.length);
         }
 
         if (results.length === 0) {
@@ -622,13 +626,33 @@ export default function TVHomePage() {
                 )}
 
                 {/* 3. 真的沒救了 */}
+                {/* 3. 真的沒救了 */}
                 {!isSearchingSources &&
                   !videoDetail &&
                   manualSearchResults.length === 0 && (
                     <div className='p-6 bg-red-900/20 border border-red-500/30 rounded-xl'>
-                      <p className='text-red-400 text-xl'>
-                        抱歉，找不到 "{selectedMovie.title}" 的相關播放資源。
-                      </p>
+                      {hiddenResultsCount > 0 ? (
+                        <div className='space-y-2'>
+                          <p className='text-red-400 text-xl font-bold'>
+                            ⚠️ 找不到可用線路
+                          </p>
+                          <p className='text-gray-300'>
+                            系統找到了 {hiddenResultsCount}{' '}
+                            個資源，但都因為您的「來源過濾」設定而被隱藏了。
+                          </p>
+                          <div className='text-yellow-400 mt-2 p-2 bg-yellow-900/20 rounded border border-yellow-700/50 text-sm'>
+                            💡 請按遙控器{' '}
+                            <span className='font-bold bg-gray-700 px-1 rounded'>
+                              設定
+                            </span>{' '}
+                            鍵，然後檢查「來源過濾」選項。
+                          </div>
+                        </div>
+                      ) : (
+                        <p className='text-red-400 text-xl'>
+                          抱歉，找不到 "{selectedMovie.title}" 的相關播放資源。
+                        </p>
+                      )}
                     </div>
                   )}
 
