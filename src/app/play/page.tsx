@@ -1725,6 +1725,14 @@ function PlayPageClient() {
                   downloadTasks={tasks}
                   lastVolume={lastVolumeRef.current}
                   lastPlaybackRate={lastPlaybackRateRef.current}
+                  fullTitle={`${videoTitle}${
+                    totalEpisodes > 1
+                      ? ` > ${
+                          detail?.episodes_titles?.[currentEpisodeIndex] ||
+                          `第 ${currentEpisodeIndex + 1} 集`
+                        }`
+                      : ''
+                  }`}
                   ref={artRef}
                 />
 

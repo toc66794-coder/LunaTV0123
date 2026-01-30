@@ -23,6 +23,7 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   downloadTasks: any;
   lastVolume: number;
   lastPlaybackRate: number;
+  fullTitle?: string;
 }
 
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
@@ -42,6 +43,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasks,
       lastVolume,
       lastPlaybackRate,
+      fullTitle,
       ...rest
     },
     ref
@@ -57,6 +59,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
     const downloadTasksRef = useRef(downloadTasks);
     const lastVolumeRef = useRef(lastVolume);
     const lastPlaybackRateRef = useRef(lastPlaybackRate);
+    const fullTitleRef = useRef(fullTitle);
 
     // --- 省電模式邏輯 (Ref-based, Zero Re-render) ---
     const [saverEnabled, setSaverEnabled] = React.useState(false);
@@ -214,6 +217,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasksRef.current = downloadTasks;
       lastVolumeRef.current = lastVolume;
       lastPlaybackRateRef.current = lastPlaybackRate;
+      fullTitleRef.current = fullTitle;
 
       if (artInstanceRef.current && (window as any).refreshCustomControls) {
         (window as any).refreshCustomControls();
@@ -224,6 +228,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasks,
       lastVolume,
       lastPlaybackRate,
+      fullTitle,
     ]);
 
     useEffect(() => {
@@ -451,6 +456,31 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               display: 'none',
             },
           },
+          {
+            name: 'custom-title',
+            html: `
+              <div id="artplayer-custom-title" style="
+                position: absolute;
+                top: 15px;
+                left: 15px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                z-index: 100;
+                pointer-events: none;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+              ">
+                <div id="title-text" style="
+                  color: white;
+                  font-size: 16px;
+                  font-weight: 600;
+                "></div>
+              </div>
+            `,
+            style: {
+              display: 'none',
+            },
+          },
         ],
       });
 
@@ -565,6 +595,17 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       art.on('control', (state: boolean) => {
         const $layer = art.layers['custom-controls'];
         if ($layer) $layer.style.display = state ? 'flex' : 'none';
+
+        const $titleLayer = art.layers['custom-title'];
+        if ($titleLayer) {
+          $titleLayer.style.display = state ? 'flex' : 'none';
+          if (state) {
+            const $titleText = $titleLayer.querySelector('#title-text');
+            if ($titleText)
+              $titleText.textContent =
+                fullTitleRef.current || option.title || '';
+          }
+        }
       });
 
       // --- 內部手勢與狀態機實作 ---
