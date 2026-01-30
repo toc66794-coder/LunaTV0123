@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { DoubanItem } from '@/lib/types';
+import { processImageUrl } from '@/lib/utils';
 
 interface TVVideoCardProps {
   movie: DoubanItem;
@@ -20,7 +21,7 @@ export function TVVideoCard({ movie, onSelect }: TVVideoCardProps) {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={movie.poster}
+        src={processImageUrl(movie.poster)}
         alt={movie.title}
         className='w-full h-full object-cover opacity-80 group-focus:opacity-100 transition-opacity'
       />

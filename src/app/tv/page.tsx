@@ -512,7 +512,7 @@ export default function TVHomePage() {
           <div className='max-w-7xl w-full flex space-x-16'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={selectedMovie.poster}
+              src={processImageUrl(selectedMovie.poster)}
               className='w-96 rounded-2xl shadow-2xl border-4 border-white/10'
               alt=''
             />
