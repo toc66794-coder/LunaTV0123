@@ -244,11 +244,25 @@ export default function TVHomePage() {
             `/api/detail?source=${match.source}&id=${match.id}`
           );
           const detailData = await detailRes.json();
-          setVideoDetail(detailData);
-        } else {
-          // If automatic matching fails or is unsure, populate manual list
-          setManualSearchResults(results);
+
+          // Only auto-select if it has episodes
+          if (
+            detailData &&
+            detailData.episodes &&
+            detailData.episodes.length > 0
+          ) {
+            setVideoDetail(detailData);
+          } else {
+            setVideoDetail(null);
+            // eslint-disable-next-line no-console
+            console.log(
+              '[TV Mode] Auto-match found but no episodes, falling back to manual list'
+            );
+          }
         }
+
+        // Always populate manual list so user can switch
+        setManualSearchResults(results);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('Failed to search sources', err);
@@ -578,9 +592,30 @@ export default function TVHomePage() {
                       </p>
                     </div>
                   )}
+
+                {/* 顯示當前來源資訊 */}
+                {videoDetail && (
+                  <div className='mt-2 mb-4 px-4 py-2 bg-gray-800/50 rounded-lg inline-block'>
+                    <span className='text-gray-400'>當前來源：</span>
+                    <span className='text-blue-400 font-bold'>
+                      {videoDetail.source_name || videoDetail.source}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className='flex space-x-6 pt-8'>
+                {/* 換源按鈕 */}
+                {videoDetail && manualSearchResults.length > 1 && (
+                  <button
+                    data-tv-focusable='true'
+                    className='px-12 py-4 bg-blue-900/50 border-2 border-blue-500 rounded-xl text-2xl font-bold focus:bg-blue-800 transition-all hover:bg-blue-800/80 text-blue-100'
+                    onClick={() => setVideoDetail(null)}
+                  >
+                    換源 ({manualSearchResults.length})
+                  </button>
+                )}
+
                 <button
                   data-tv-focusable='true'
                   className='px-12 py-4 bg-gray-800 rounded-xl text-2xl font-bold focus:ring-8 focus:ring-gray-600 outline-none transition-all hover:bg-gray-700'
