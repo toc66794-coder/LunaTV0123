@@ -571,7 +571,19 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       const $container = art.template.$container;
       if (!$container) return;
 
+      const isUiTap = (target: HTMLElement) => {
+        return (
+          target.closest('.art-controls') ||
+          target.closest('.art-layers') ||
+          target.closest('#artplayer-custom-controls') ||
+          target.closest('.art-mask')
+        );
+      };
+
       const handleTouchStart = (e: TouchEvent) => {
+        const target = e.target as HTMLElement;
+        if (isUiTap(target)) return;
+
         const touch = e.touches[0];
         const rect = $container.getBoundingClientRect();
         startX = touch.clientX - rect.left;
@@ -583,12 +595,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if (art.video) {
           const styleFilter = art.video.style.filter;
           const match = styleFilter.match(/brightness\((\d+)%\)/);
-          if (match) {
-            currentBrightness = parseInt(match[1], 10);
-          } else {
-            // 如果沒有設置，預設為 100
-            currentBrightness = 100;
-          }
+          currentBrightness = match ? parseInt(match[1], 10) : 100;
         }
 
         // 啟動長按計時器 (500ms)
@@ -605,6 +612,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       };
 
       const handleTouchMove = (e: TouchEvent) => {
+        const target = e.target as HTMLElement;
+        if (isUiTap(target)) return;
+
         const touch = e.touches[0];
         const rect = $container.getBoundingClientRect();
         const currentX = touch.clientX - rect.left;
@@ -613,30 +623,23 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         const deltaX = Math.abs(currentX - startX);
         const deltaY = Math.abs(currentY - startY);
 
-        // 如果已經在長按模式，完全鎖定（不允許任何其他手勢）
+        // 如果已經在長按模式，完全鎖定
         if (activeGestureMode === 'longpress') {
           if (e.cancelable) e.preventDefault();
-          e.stopPropagation(); // 阻止事件冒泡
-          e.stopImmediatePropagation(); // 阻止同元素其他事件
+          e.stopPropagation();
+          e.stopImmediatePropagation();
           return;
         }
 
-        // 如果還在長按計時中且移動明顯，取消計時器
         if (longPressTimer && (deltaX > 20 || deltaY > 20)) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
 
-        // 判斷移動方向（降低最小閾值）
         const minMoveThreshold = 10;
-        if (deltaX < minMoveThreshold && deltaY < minMoveThreshold) {
-          return; // 移動太小，不處理
-        }
+        if (deltaX < minMoveThreshold && deltaY < minMoveThreshold) return;
 
-        // 如果已經進入某個模式，持續該模式（鎖定方向）
-        if (activeGestureMode === 'seeking') {
-          return;
-        }
+        if (activeGestureMode === 'seeking') return;
 
         if (activeGestureMode === 'adjusting') {
           if (e.cancelable) e.preventDefault();
@@ -645,32 +648,19 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           const xPercent = startX / rect.width;
 
           if (xPercent < 0.3) {
-            // 左側：亮度調整 (平滑化處理)
-            // 降低靈敏度係數
             const sensitivity = 0.5;
             const change = yChange * sensitivity;
-
-            // 基於記錄的起始值計算，而不是每次都讀 DOM
-            // 這裡我們需要的是增量更新
-            // 但為了平滑，我們使用 currentBrightness 累積
             const targetBrightness = Math.max(
               10,
               Math.min(200, currentBrightness + change)
             );
-
-            // 應用到 DOM
             if (art.video) {
               art.video.style.filter = `brightness(${Math.round(
                 targetBrightness
               )}%)`;
             }
             art.notice.show = `☀️ 亮度: ${Math.round(targetBrightness)}%`;
-
-            // 注意：這裡不更新 currentBrightness，因為 startY 未重置
-            // 這種模式下是 "拖曳距離 -> 亮度變化量" 的映射
-            // 如果要實現 "增量累積"，需要重置 startY
           } else if (xPercent > 0.7) {
-            // 右側：音量調整
             const volumeChange = yChange * 0.005;
             const newVolume = Math.max(
               0,
@@ -680,9 +670,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
           }
 
-          // 重置起點，實現平滑增量更新
           startY = currentY;
-          // 對於亮度，更新基準值
           if (xPercent < 0.3) {
             const change = yChange * 0.5;
             currentBrightness = Math.max(
@@ -690,11 +678,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               Math.min(200, currentBrightness + change)
             );
           }
-
           return;
         }
 
-        // 首次判定方向
         const horizontalTolerance = 0.6;
         const verticalTolerance = 0.6;
 
@@ -709,12 +695,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if (deltaY > deltaX / verticalTolerance && deltaY > minMoveThreshold) {
           activeGestureMode = 'adjusting';
           if (e.cancelable) e.preventDefault();
-          // 初始化亮度基準值 (防止跳變)
-          if (art.video) {
-            const styleFilter = art.video.style.filter;
-            const match = styleFilter.match(/brightness\((\d+)%\)/);
-            currentBrightness = match ? parseInt(match[1], 10) : 100;
-          }
           return;
         }
       };
@@ -723,6 +703,17 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       const handleTouchEnd = (e: TouchEvent) => {
         if (longPressTimer) clearTimeout(longPressTimer);
+
+        const target = e.target as HTMLElement;
+        const isUi = isUiTap(target);
+
+        // 如果控制列已顯示，或者點擊的是 UI 元素，則不啟動自定義手勢邏輯
+        if (art.controls.show || isUi) {
+          activeGestureMode = 'none';
+          lastTapTime = 0;
+          lastTapSide = null;
+          return;
+        }
 
         // 長按模式結束
         if (activeGestureMode === 'longpress') {
@@ -758,7 +749,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
         // 判斷是否為「輕觸」(Tap) 而非滑動
         if (now - startTime < 300) {
-          // 攔截預設的控制列切換，改由我們手動控制時間
+          // 只有在處理自定義手勢時才攔截事件
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
 
@@ -768,7 +759,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
           // 檢測雙擊
           if (now - lastTapTime < 300 && lastTapSide === side) {
-            // 雙擊成功：清除剛才產生的單擊計時器，不顯示控制列
             if (singleTapTimer) {
               clearTimeout(singleTapTimer);
               singleTapTimer = null;
@@ -781,7 +771,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               art.seek = Math.min(art.duration, art.currentTime + 10);
               art.notice.show = '⏩ 快進 10 秒';
             } else {
-              // 中央位置雙擊通常觸發全螢幕切換
               art.fullscreen = !art.fullscreen;
             }
 
@@ -794,7 +783,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
             if (singleTapTimer) clearTimeout(singleTapTimer);
             singleTapTimer = setTimeout(() => {
-              // 如果 300ms 內沒點第二下，才執行顯示/隱藏控制列
               art.controls.show = !art.controls.show;
               singleTapTimer = null;
               lastTapTime = 0;
