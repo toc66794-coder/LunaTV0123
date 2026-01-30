@@ -9,7 +9,13 @@ interface TVFocusContextType {
 
 const TVFocusContext = createContext<TVFocusContextType | null>(null);
 
-export function TVFocusProvider({ children }: { children: React.ReactNode }) {
+export function TVFocusProvider({
+  children,
+  className = 'bg-black min-h-screen text-white overflow-hidden p-8',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   useEffect(() => {
     // 確保只初始化一次
     ensureFocusManager();
@@ -19,9 +25,7 @@ export function TVFocusProvider({ children }: { children: React.ReactNode }) {
     <TVFocusContext.Provider
       value={{ focusElement: (id) => console.log('Focusing', id) }}
     >
-      <div className='tv-root bg-black min-h-screen text-white overflow-hidden p-8'>
-        {children}
-      </div>
+      <div className={`tv-root ${className}`}>{children}</div>
     </TVFocusContext.Provider>
   );
 }
