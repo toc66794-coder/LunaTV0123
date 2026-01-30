@@ -298,11 +298,25 @@ export default function TVHomePage() {
         `/api/detail?source=${source.source}&id=${source.id}`
       );
       const detailData = await detailRes.json();
+
+      // Check if episodes exist
+      if (
+        !detailData.episodes ||
+        detailData.episodes.length === 0 ||
+        (detailData.episodes.length === 1 && !detailData.episodes[0])
+      ) {
+        // eslint-disable-next-line no-alert
+        alert('該線路無效或無集數，請選擇其他線路');
+        return;
+      }
+
       setVideoDetail(detailData);
       setManualSearchResults([]); // Clear manual list after selection
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
+      // eslint-disable-next-line no-alert
+      alert('獲取線路詳情失敗');
     } finally {
       setIsSearchingSources(false);
     }
@@ -310,6 +324,7 @@ export default function TVHomePage() {
 
   return (
     <div className='flex flex-col space-y-12 p-10 pb-20 relative'>
+      {/* ... keeping previous code ... */}
       {/* Top Navigation */}
       <header className='flex items-center justify-between z-20 relative'>
         <h1 className='text-4xl font-extrabold tracking-tighter text-blue-500'>
@@ -532,7 +547,7 @@ export default function TVHomePage() {
                     : videoDetail
                     ? '播放列表'
                     : manualSearchResults.length > 0
-                    ? '請選擇可用片源 (自動匹配失敗)'
+                    ? '自動匹配線路無效，請從下方選擇其他線路'
                     : '暫無可用線路'}
                 </h3>
 
