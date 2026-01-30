@@ -42,6 +42,9 @@ export default function TVHomePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [disabledSources, setDisabledSources] = useState<string[]>([]);
 
+  // Focus management refs
+  const detailModalRef = React.useRef<HTMLDivElement>(null);
+
   // Check Auth
   useEffect(() => {
     // 載入設置 (改用黑名單邏輯以支援自動添加新源)
@@ -185,11 +188,31 @@ export default function TVHomePage() {
         const searchData = await searchRes.json();
         let results = searchData.results || [];
 
+        // Debug: Log search results before filtering
+        // eslint-disable-next-line no-console
+        console.log(
+          '[TV Mode] Search results for',
+          selectedMovie.title,
+          ':',
+          results.length
+        );
+        // eslint-disable-next-line no-console
+        console.log('[TV Mode] Disabled sources:', disabledSources);
+
         // 0. Filter by disabled sources (Blacklist)
         if (disabledSources.length > 0) {
+          const beforeFilter = results.length;
           results = results.filter(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (r: any) => !disabledSources.includes(r.source)
+          );
+          // eslint-disable-next-line no-console
+          console.log(
+            '[TV Mode] Filtered from',
+            beforeFilter,
+            'to',
+            results.length,
+            'sources'
           );
         }
 
@@ -236,6 +259,21 @@ export default function TVHomePage() {
 
     searchSource();
   }, [selectedMovie, disabledSources]);
+
+  // Manage focus scope when detail modal opens/closes
+  useEffect(() => {
+    if (selectedMovie && detailModalRef.current) {
+      // Import setFocusScope dynamically
+      import('@/components/tv/TVFocusProvider').then(({ setFocusScope }) => {
+        setFocusScope(detailModalRef.current);
+      });
+    } else {
+      // Reset focus scope when modal closes
+      import('@/components/tv/TVFocusProvider').then(({ setFocusScope }) => {
+        setFocusScope(null);
+      });
+    }
+  }, [selectedMovie]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleManualSelect = async (source: any) => {
@@ -453,7 +491,10 @@ export default function TVHomePage() {
 
       {/* 詳情模式 */}
       {selectedMovie && (
-        <div className='fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-20 animate-in fade-in zoom-in duration-300'>
+        <div
+          ref={detailModalRef}
+          className='fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-20 animate-in fade-in zoom-in duration-300'
+        >
           <div className='max-w-7xl w-full flex space-x-16'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
