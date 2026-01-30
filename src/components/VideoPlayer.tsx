@@ -719,6 +719,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }
       };
 
+      let singleTapTimer: NodeJS.Timeout | null = null;
+
       const handleTouchEnd = (e: TouchEvent) => {
         if (longPressTimer) clearTimeout(longPressTimer);
 
@@ -747,34 +749,57 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           return;
         }
 
-        // 雙擊檢測
+        // 雙擊與單擊檢測
         const touch = e.changedTouches[0];
         const rect = $container.getBoundingClientRect();
         const x = touch.clientX - rect.left;
         const xPercent = x / rect.width;
         const now = Date.now();
 
-        if (now - startTime < 250) {
+        // 判斷是否為「輕觸」(Tap) 而非滑動
+        if (now - startTime < 300) {
+          // 攔截預設的控制列切換，改由我們手動控制時間
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+
           let side: 'left' | 'right' | null = null;
           if (xPercent < 0.25) side = 'left';
           else if (xPercent > 0.75) side = 'right';
 
-          if (side) {
-            if (now - lastTapTime < 300 && lastTapSide === side) {
-              // 雙擊成功
-              if (side === 'left') {
-                art.seek = Math.max(0, art.currentTime - 10);
-                art.notice.show = '⏪ 後退 10 秒';
-              } else {
-                art.seek = Math.min(art.duration, art.currentTime + 10);
-                art.notice.show = '⏩ 快進 10 秒';
-              }
+          // 檢測雙擊
+          if (now - lastTapTime < 300 && lastTapSide === side) {
+            // 雙擊成功：清除剛才產生的單擊計時器，不顯示控制列
+            if (singleTapTimer) {
+              clearTimeout(singleTapTimer);
+              singleTapTimer = null;
+            }
+
+            if (side === 'left') {
+              art.seek = Math.max(0, art.currentTime - 10);
+              art.notice.show = '⏪ 後退 10 秒';
+            } else if (side === 'right') {
+              art.seek = Math.min(art.duration, art.currentTime + 10);
+              art.notice.show = '⏩ 快進 10 秒';
+            } else {
+              // 中央位置雙擊通常觸發全螢幕切換
+              art.fullscreen = !art.fullscreen;
+            }
+
+            lastTapTime = 0;
+            lastTapSide = null;
+          } else {
+            // 第一下點擊：啟動延遲計時器
+            lastTapTime = now;
+            lastTapSide = side;
+
+            if (singleTapTimer) clearTimeout(singleTapTimer);
+            singleTapTimer = setTimeout(() => {
+              // 如果 300ms 內沒點第二下，才執行顯示/隱藏控制列
+              art.controls.show = !art.controls.show;
+              singleTapTimer = null;
               lastTapTime = 0;
               lastTapSide = null;
-            } else {
-              lastTapTime = now;
-              lastTapSide = side;
-            }
+            }, 300);
           }
         }
 
