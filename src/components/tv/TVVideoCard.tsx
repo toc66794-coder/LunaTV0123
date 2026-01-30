@@ -23,6 +23,7 @@ export function TVVideoCard({ movie, onSelect }: TVVideoCardProps) {
       <img
         src={processImageUrl(movie.poster)}
         alt={movie.title}
+        referrerPolicy='no-referrer'
         className='w-full h-full object-cover opacity-80 group-focus:opacity-100 transition-opacity'
       />
 

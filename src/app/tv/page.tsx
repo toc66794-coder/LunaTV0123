@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 
 import { getDoubanCategories, getDoubanRecommends } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
+import { processImageUrl } from '@/lib/utils';
 
 import { TVSettingsPanel } from '@/components/tv/TVSettingsPanel';
 import { TVVideoCard } from '@/components/tv/TVVideoCard';
@@ -267,12 +268,18 @@ export default function TVHomePage() {
           const detailRes = await fetch(
             `/api/detail?source=${match.source}&id=${match.id}`
           );
-          const detailData = await detailRes.json();
-          setVideoDetail(detailData);
-          // 若為單集內容，直接自動播放
-          if (detailData?.episodes && detailData.episodes.length === 1) {
-            setSelectedEpisodeIndex(0);
-            setIsPlaying(true);
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            setVideoDetail(detailData);
+            // 若為單集內容，直接自動播放
+            if (detailData?.episodes && detailData.episodes.length === 1) {
+              setSelectedEpisodeIndex(0);
+              setIsPlaying(true);
+            }
+          } else {
+            // Auto-match failed (e.g. 500 error), fallback to manual
+            console.warn('Auto-match source failed:', match.source);
+            setManualSearchResults(results);
           }
         } else {
           // If automatic matching fails or is unsure, populate manual list
@@ -295,11 +302,17 @@ export default function TVHomePage() {
       const detailRes = await fetch(
         `/api/detail?source=${source.source}&id=${source.id}`
       );
+      if (!detailRes.ok) {
+        throw new Error('Source unavailable');
+      }
       const detailData = await detailRes.json();
       setVideoDetail(detailData);
       setManualSearchResults([]); // Clear manual list after selection
     } catch (e) {
       console.error(e);
+      // Maybe show a toast or alert here? For now, we rely on the user seeing it didn't work or staying on the list
+      // But clearing videoDetail might be safer if we want to show "Unavailable"
+      // setVideoDetail(null);
     } finally {
       setIsSearchingSources(false);
     }
@@ -539,9 +552,10 @@ export default function TVHomePage() {
           <div className='max-w-7xl w-full flex space-x-16'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={selectedMovie.poster}
+              src={processImageUrl(selectedMovie.poster)}
               className='w-96 rounded-2xl shadow-2xl border-4 border-white/10'
               alt=''
+              referrerPolicy='no-referrer'
             />
             <div className='flex-1 flex flex-col justify-center space-y-8'>
               <h1 className='text-7xl font-bold'>{selectedMovie.title}</h1>
@@ -666,6 +680,15 @@ export default function TVHomePage() {
                 setSelectedEpisodeIndex(selectedEpisodeIndex + 1);
               } else {
                 setIsPlaying(false);
+              }
+            }}
+            onError={(e) => {
+              console.error('Playback error:', e);
+              setIsPlaying(false);
+              // Open switch source list
+              if (allSearchResults.length > 0) {
+                setManualSearchResults(allSearchResults);
+                setShowSwitchList(true);
               }
             }}
           />

@@ -28,6 +28,7 @@ interface TVVideoPlayerProps {
   onPrev?: () => void;
   onEpisodeSelect?: (episode: number) => void;
   onClose?: () => void;
+  onError?: (error: any) => void;
 }
 
 type MenuMode = 'main' | 'skip' | 'episodes' | null;
@@ -43,6 +44,7 @@ export function TVVideoPlayer({
   onPrev,
   onEpisodeSelect,
   onClose,
+  onError,
 }: TVVideoPlayerProps) {
   const artRef = useRef<HTMLDivElement>(null);
   const artInstance = useRef<Artplayer | null>(null);
@@ -587,6 +589,12 @@ export function TVVideoPlayer({
     art.on('video:ended', () => {
       if (onEnded) onEnded();
       if (onNext) onNext();
+    });
+
+    art.on('error', (error) => {
+      console.error('Artplayer error:', error);
+      art.notice.show = '播放出錯: 請嘗試換源';
+      if (onError) onError(error);
     });
 
     return () => {
