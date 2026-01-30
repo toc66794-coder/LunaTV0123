@@ -45,13 +45,20 @@ export const ensureFocusManager = () => {
   isFocusManagerInitialized = true;
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    // Ignore inputs
-    if (
-      ['INPUT', 'TEXTAREA'].includes(
-        (document.activeElement as HTMLElement).tagName
-      )
-    ) {
-      return;
+    // Ignore inputs unless it's navigation keys
+    const isInput = ['INPUT', 'TEXTAREA'].includes(
+      (document.activeElement as HTMLElement).tagName
+    );
+
+    if (isInput) {
+      // Only allow Up/Down to navigate out of inputs, Left/Right might be for cursor
+      // But if the user wants to navigate out horizontally, they might be stuck too.
+      // For TV interface with Virtual Keyboard, we usually prioritize navigation.
+      // Let's allow Up/Down to escape always.
+      if (!['ArrowUp', 'ArrowDown'].includes(e.key)) {
+        return;
+      }
+      // If Up/Down, we continue to spatial navigation logic
     }
 
     // 獲取所有可聚焦元素

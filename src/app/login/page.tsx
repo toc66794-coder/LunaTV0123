@@ -2,16 +2,21 @@
 
 'use client';
 
-import { AlertCircle, CheckCircle, Keyboard as KeyboardIcon } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle,
+  Keyboard as KeyboardIcon,
+} from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
+
+import { CURRENT_VERSION } from '@/lib/version';
+import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { TVFocusProvider } from '@/components/tv/TVFocusProvider';
 import { VirtualKeyboard } from '@/components/VirtualKeyboard';
-import { CURRENT_VERSION } from '@/lib/version';
-import { checkForUpdates, UpdateStatus } from '@/lib/version_check';
 
 // 版本显示组件
 function VersionDisplay() {
@@ -95,6 +100,16 @@ function LoginPageClient() {
       if (askUser) {
         setActiveField('username');
       }
+
+      // Auto focus the first input for TV navigation
+      setTimeout(() => {
+        const firstInput = document.querySelector(
+          'input[data-tv-focusable="true"]'
+        ) as HTMLElement;
+        if (firstInput) {
+          firstInput.focus();
+        }
+      }, 100);
     }
   }, []);
 

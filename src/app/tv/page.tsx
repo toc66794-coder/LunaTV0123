@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console */
 'use client';
 
 import React, { useEffect, useState } from 'react';
 
-import { getDoubanCategories } from '@/lib/douban.client';
+import { getDoubanCategories, getDoubanRecommends } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 
 import { TVSettingsPanel } from '@/components/tv/TVSettingsPanel';
@@ -39,7 +40,6 @@ export default function TVHomePage() {
 
   // Search Fallback State
   const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
-  const [hiddenResultsCount, setHiddenResultsCount] = useState(0);
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -167,10 +167,9 @@ export default function TVHomePage() {
 
         if (filterMode === 'all' || filterMode === 'tv') {
           promises.push(
-            getDoubanCategories({
+            getDoubanRecommends({
               kind: 'tv',
-              category: '热门',
-              type: '电视剧',
+              category: '电视剧',
             }).then((res) =>
               res.code === 200 ? setHotTvShows(res.list) : null
             )
@@ -179,10 +178,9 @@ export default function TVHomePage() {
 
         if (filterMode === 'all' || filterMode === 'anime') {
           promises.push(
-            getDoubanCategories({
+            getDoubanRecommends({
               kind: 'tv',
-              category: '热门',
-              type: '动漫',
+              category: '动漫',
             }).then((res) =>
               res.code === 200 ? setHotAnimation(res.list) : null
             )
@@ -192,10 +190,9 @@ export default function TVHomePage() {
         if (filterMode === 'all' || filterMode === 'variety') {
           // Optional: Add variety support if needed, mapped to 'show'
           promises.push(
-            getDoubanCategories({
+            getDoubanRecommends({
               kind: 'tv',
-              category: '热门',
-              type: '综艺',
+              category: '综艺',
             }).then((res) =>
               res.code === 200 ? setHotVariety(res.list) : null
             )

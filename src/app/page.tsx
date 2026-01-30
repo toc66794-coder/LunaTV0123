@@ -17,7 +17,7 @@ import {
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { getDoubanCategories } from '@/lib/douban.client';
+import { getDoubanCategories, getDoubanRecommends } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -102,8 +102,8 @@ function HomeClient() {
               category: '热门',
               type: '全部',
             }),
-            getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
-            getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
+            getDoubanRecommends({ kind: 'tv', category: '电视剧' }),
+            getDoubanRecommends({ kind: 'tv', category: '综艺' }),
             GetBangumiCalendarData(),
           ]);
 
