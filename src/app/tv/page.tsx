@@ -606,6 +606,16 @@ export default function TVHomePage() {
             }`}
             poster={selectedMovie.poster}
             onClose={() => setIsPlaying(false)}
+            onNext={() => {
+              if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
+                setSelectedEpisodeIndex(selectedEpisodeIndex + 1);
+              }
+            }}
+            onPrev={() => {
+              if (selectedEpisodeIndex > 0) {
+                setSelectedEpisodeIndex(selectedEpisodeIndex - 1);
+              }
+            }}
             onEnded={() => {
               if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
                 setSelectedEpisodeIndex(selectedEpisodeIndex + 1);
