@@ -34,15 +34,26 @@ function normalizePlayRecord(input: any): PlayRecord {
   const o: any = typeof input === 'object' && input ? input : {};
   const r: PlayRecord = {
     title: typeof o.title === 'string' ? o.title : base.title,
-    source_name: typeof o.source_name === 'string' ? o.source_name : base.source_name,
+    source_name:
+      typeof o.source_name === 'string' ? o.source_name : base.source_name,
     cover: typeof o.cover === 'string' ? o.cover : base.cover,
     year: typeof o.year === 'string' ? o.year : base.year,
     index: typeof o.index === 'number' && o.index >= 1 ? o.index : base.index,
-    total_episodes: typeof o.total_episodes === 'number' && o.total_episodes >= 0 ? o.total_episodes : base.total_episodes,
-    play_time: typeof o.play_time === 'number' && o.play_time >= 0 ? o.play_time : base.play_time,
-    total_time: typeof o.total_time === 'number' && o.total_time >= 0 ? o.total_time : base.total_time,
+    total_episodes:
+      typeof o.total_episodes === 'number' && o.total_episodes >= 0
+        ? o.total_episodes
+        : base.total_episodes,
+    play_time:
+      typeof o.play_time === 'number' && o.play_time >= 0
+        ? o.play_time
+        : base.play_time,
+    total_time:
+      typeof o.total_time === 'number' && o.total_time >= 0
+        ? o.total_time
+        : base.total_time,
     save_time: typeof o.save_time === 'number' ? o.save_time : now,
-    search_title: typeof o.search_title === 'string' ? o.search_title : base.search_title,
+    search_title:
+      typeof o.search_title === 'string' ? o.search_title : base.search_title,
   };
   return r;
 }
@@ -99,7 +110,9 @@ export class UpstashRedisStorage implements IStorage {
     userName: string,
     key: string
   ): Promise<PlayRecord | null> {
-    const raw = await withRetry(() => this.client.get(this.prKey(userName, key)));
+    const raw = await withRetry(() =>
+      this.client.get(this.prKey(userName, key))
+    );
     if (raw === null) return null;
     let obj: any = raw;
     if (typeof raw === 'string') {
@@ -107,12 +120,16 @@ export class UpstashRedisStorage implements IStorage {
         obj = JSON.parse(raw);
       } catch {
         const fresh = normalizePlayRecord(null);
-        await withRetry(() => this.client.set(this.prKey(userName, key), fresh));
+        await withRetry(() =>
+          this.client.set(this.prKey(userName, key), fresh)
+        );
         return fresh;
       }
     }
     const normalized = normalizePlayRecord(obj);
-    await withRetry(() => this.client.set(this.prKey(userName, key), normalized));
+    await withRetry(() =>
+      this.client.set(this.prKey(userName, key), normalized)
+    );
     return normalized;
   }
 
@@ -133,8 +150,11 @@ export class UpstashRedisStorage implements IStorage {
     if (keys.length === 0) return {};
 
     const result: Record<string, PlayRecord> = {};
-    for (const fullKey of keys) {
-      const value = await withRetry(() => this.client.get(fullKey));
+    // 使用 mget 批量獲取
+    const values = await withRetry(() => this.client.mget(keys));
+
+    keys.forEach((fullKey, index) => {
+      const value = values[index];
       if (value !== null) {
         let obj: any = value;
         if (typeof value === 'string') {
@@ -145,11 +165,12 @@ export class UpstashRedisStorage implements IStorage {
           }
         }
         const normalized = normalizePlayRecord(obj);
-        await withRetry(() => this.client.set(fullKey, normalized));
+        // 為了確保格式一致，這裡不主動 set 回去，除非真的有變動
         const keyPart = ensureString(fullKey.replace(`u:${userName}:pr:`, ''));
         result[keyPart] = normalized;
       }
-    }
+    });
+
     return result;
   }
 
@@ -185,13 +206,16 @@ export class UpstashRedisStorage implements IStorage {
     if (keys.length === 0) return {};
 
     const result: Record<string, Favorite> = {};
-    for (const fullKey of keys) {
-      const value = await withRetry(() => this.client.get(fullKey));
+    const values = await withRetry(() => this.client.mget(keys));
+
+    keys.forEach((fullKey, index) => {
+      const value = values[index];
       if (value) {
         const keyPart = ensureString(fullKey.replace(`u:${userName}:fav:`, ''));
         result[keyPart] = value as Favorite;
       }
-    }
+    });
+
     return result;
   }
 

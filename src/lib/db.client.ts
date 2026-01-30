@@ -72,6 +72,7 @@ interface UserCacheStore {
 const PLAY_RECORDS_KEY = 'moontv_play_records';
 const FAVORITES_KEY = 'moontv_favorites';
 const SEARCH_HISTORY_KEY = 'moontv_search_history';
+const DEVICE_PLAY_RECORDS_KEY = 'moontv_device_play_records';
 
 // 缓存相关常量
 const CACHE_PREFIX = 'moontv_cache_';
@@ -98,8 +99,98 @@ const SEARCH_HISTORY_LIMIT = 20;
 
 // API 節流相關（僅客戶端）
 const apiSyncThrottles: Record<string, number> = {};
-const SYNC_THROTTLE_INTERVAL = 60 * 1000; // 60 秒節流
+const SYNC_THROTTLE_INTERVAL = 300 * 1000; // 5 分鐘節流
 let hasScheduledInitialSync = false;
+let hasStartedPeriodicSync = false;
+
+function readDevicePlayRecords(): Record<string, PlayRecord> {
+  try {
+    if (typeof window === 'undefined') return {};
+    const raw = localStorage.getItem(DEVICE_PLAY_RECORDS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, PlayRecord>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDevicePlayRecords(data: Record<string, PlayRecord>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DEVICE_PLAY_RECORDS_KEY, JSON.stringify(data));
+  } catch {
+    console.warn('寫入裝置播放紀錄失敗');
+  }
+}
+
+function mergePlayRecords(
+  local: Record<string, PlayRecord>,
+  remote: Record<string, PlayRecord>
+): {
+  merged: Record<string, PlayRecord>;
+  toPush: Record<string, PlayRecord>;
+} {
+  const merged: Record<string, PlayRecord> = {};
+  const toPush: Record<string, PlayRecord> = {};
+  const keys = new Set([...Object.keys(local), ...Object.keys(remote)]);
+  keys.forEach((k) => {
+    const l = local[k];
+    const r = remote[k];
+    if (l && r) {
+      // 以較新的為主
+      const newer = (l.save_time || 0) >= (r.save_time || 0) ? l : r;
+      merged[k] = newer;
+      if (newer === l && (l.save_time || 0) > (r.save_time || 0)) {
+        toPush[k] = l;
+      }
+    } else if (l && !r) {
+      merged[k] = l;
+      toPush[k] = l;
+    } else if (!l && r) {
+      merged[k] = r;
+    }
+  });
+  return { merged, toPush };
+}
+
+async function runBiDirectionalSyncPlayRecords(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    const device = readDevicePlayRecords();
+    let remote: Record<string, PlayRecord> = {};
+    try {
+      remote = await fetchFromApi<Record<string, PlayRecord>>(
+        `/api/playrecords`
+      );
+    } catch {
+      remote = {};
+    }
+    const { merged, toPush } = mergePlayRecords(device, remote);
+    // 推送本地較新資料到線上
+    const entries = Object.entries(toPush);
+    for (const [key, record] of entries) {
+      try {
+        await fetchWithAuth('/api/playrecords', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, record }),
+        });
+      } catch {
+        console.warn('推送播放紀錄失敗');
+      }
+    }
+    // 更新裝置端主存
+    writeDevicePlayRecords(merged);
+    // 更新快取並通知 UI
+    cacheManager.cachePlayRecords(merged);
+    window.dispatchEvent(
+      new CustomEvent('playRecordsUpdated', {
+        detail: merged,
+      })
+    );
+  } catch {
+    console.warn('雙向同步播放紀錄失敗');
+  }
+}
 
 // ---- 缓存管理器 ----
 class HybridCacheManager {
@@ -529,24 +620,15 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
 
     if (cachedData) {
       const runSync = () => {
-        fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
-          .then((freshData) => {
-            if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-              cacheManager.cachePlayRecords(freshData);
-              window.dispatchEvent(
-                new CustomEvent('playRecordsUpdated', {
-                  detail: freshData,
-                })
-              );
-            }
-          })
-          .catch((err) => {
-            console.warn('后台同步播放记录失败:', err);
-          });
+        runBiDirectionalSyncPlayRecords();
       };
       if (!hasScheduledInitialSync) {
         hasScheduledInitialSync = true;
         setTimeout(runSync, 3000);
+        if (!hasStartedPeriodicSync) {
+          hasStartedPeriodicSync = true;
+          setInterval(runBiDirectionalSyncPlayRecords, 15 * 60 * 1000);
+        }
       } else {
         runSync();
       }
@@ -554,22 +636,15 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
       return cachedData;
     } else {
       const runSync = () => {
-        fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
-          .then((freshData) => {
-            cacheManager.cachePlayRecords(freshData);
-            window.dispatchEvent(
-              new CustomEvent('playRecordsUpdated', {
-                detail: freshData,
-              })
-            );
-          })
-          .catch((err) => {
-            console.warn('首次获取播放记录失败:', err);
-          });
+        runBiDirectionalSyncPlayRecords();
       };
       if (!hasScheduledInitialSync) {
         hasScheduledInitialSync = true;
         setTimeout(runSync, 3000);
+        if (!hasStartedPeriodicSync) {
+          hasStartedPeriodicSync = true;
+          setInterval(runBiDirectionalSyncPlayRecords, 15 * 60 * 1000);
+        }
       } else {
         runSync();
       }
