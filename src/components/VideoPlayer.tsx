@@ -6,8 +6,6 @@ import artplayerPluginChromecast from 'artplayer-plugin-chromecast';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import React from 'react';
 
-import { filterAdsFromM3U8 } from '@/lib/utils';
-
 interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   option: any;
   getInstance: (art: any) => void;
@@ -23,7 +21,6 @@ interface VideoPlayerProps extends React.HTMLAttributes<HTMLDivElement> {
   downloadTasks: any;
   lastVolume: number;
   lastPlaybackRate: number;
-  fullTitle?: string;
 }
 
 const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
@@ -43,7 +40,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasks,
       lastVolume,
       lastPlaybackRate,
-      fullTitle,
       ...rest
     },
     ref
@@ -59,7 +55,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
     const downloadTasksRef = useRef(downloadTasks);
     const lastVolumeRef = useRef(lastVolume);
     const lastPlaybackRateRef = useRef(lastPlaybackRate);
-    const fullTitleRef = useRef(fullTitle);
 
     // --- 省電模式邏輯 (Ref-based, Zero Re-render) ---
     const [saverEnabled, setSaverEnabled] = React.useState(false);
@@ -217,7 +212,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasksRef.current = downloadTasks;
       lastVolumeRef.current = lastVolume;
       lastPlaybackRateRef.current = lastPlaybackRate;
-      fullTitleRef.current = fullTitle;
 
       if (artInstanceRef.current && (window as any).refreshCustomControls) {
         (window as any).refreshCustomControls();
@@ -228,7 +222,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       downloadTasks,
       lastVolume,
       lastPlaybackRate,
-      fullTitle,
     ]);
 
     useEffect(() => {
@@ -248,13 +241,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           m3u8: async function (video: HTMLVideoElement, url: string) {
             const { default: Hls } = await import('hls.js');
             if (!Hls) return;
-
-            // Check for ad block setting (default true)
-            let blockAdEnabled = true;
-            if (typeof window !== 'undefined') {
-              const v = localStorage.getItem('enable_blockad');
-              if (v !== null) blockAdEnabled = v === 'true';
-            }
 
             class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               constructor(config: any) {
@@ -294,7 +280,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               maxBufferLength: 30,
               backBufferLength: 30,
               maxBufferSize: 60 * 1000 * 1000,
-              loader: blockAdEnabled
+              loader: blockAdEnabledRef.current
                 ? CustomHlsJsLoader
                 : Hls.DefaultConfig.loader,
             });
@@ -456,57 +442,21 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               display: 'none',
             },
           },
-          {
-            name: 'custom-title',
-            html: `
-              <div id="artplayer-custom-title" style="
-                position: absolute;
-                top: 15px;
-                left: 15px;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                z-index: 100;
-                pointer-events: none;
-                text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-              ">
-                <div id="title-text" style="
-                  color: white;
-                  font-size: 16px;
-                  font-weight: 600;
-                "></div>
-              </div>
-            `,
-            style: {
-              display: 'none',
-            },
-          },
         ],
       });
 
       artInstanceRef.current = art;
 
-      (window as any).toggleAdBlock = () => {
-        onBlockAdToggle();
-        art.controls.show = true; // 重置隱藏計時器
-      };
-      (window as any).startDownload = () => {
-        onStartDownload();
-        art.controls.show = true;
-      };
-      (window as any).openSettings = () => {
-        onOpenSettings();
-        art.controls.show = true;
-      };
+      (window as any).toggleAdBlock = onBlockAdToggle;
+      (window as any).startDownload = onStartDownload;
+      (window as any).openSettings = onOpenSettings;
       (window as any).setPlaySpeed = (s: number) => {
         art.playbackRate = s;
-        art.controls.show = true;
       };
 
       // 將 setSaverEnabled 暴露給 window
       (window as any).toggleSaverMode = () => {
         setSaverEnabled((prev) => !prev);
-        art.controls.show = true;
       };
 
       const updateCustomControls = () => {
@@ -595,17 +545,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       art.on('control', (state: boolean) => {
         const $layer = art.layers['custom-controls'];
         if ($layer) $layer.style.display = state ? 'flex' : 'none';
-
-        const $titleLayer = art.layers['custom-title'];
-        if ($titleLayer) {
-          $titleLayer.style.display = state ? 'flex' : 'none';
-          if (state) {
-            const $titleText = $titleLayer.querySelector('#title-text');
-            if ($titleText)
-              $titleText.textContent =
-                fullTitleRef.current || option.title || '';
-          }
-        }
       });
 
       // --- 內部手勢與狀態機實作 ---
@@ -617,25 +556,13 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       let longPressTimer: NodeJS.Timeout | null = null;
       let speedBeforeLongPress = 1;
       let lastTapTime = 0;
-      let lastTapSide: 'left' | 'right' | 'middle' | null = null;
+      let lastTapSide: 'left' | 'right' | null = null;
       let currentBrightness = 100; // 內部維護精確亮度值
 
       const $container = art.template.$container;
       if (!$container) return;
 
-      const isUiTap = (target: HTMLElement) => {
-        return (
-          target.closest('.art-controls') ||
-          target.closest('.art-layers') ||
-          target.closest('#artplayer-custom-controls') ||
-          target.closest('.art-mask')
-        );
-      };
-
       const handleTouchStart = (e: TouchEvent) => {
-        const target = e.target as HTMLElement;
-        if (isUiTap(target)) return;
-
         const touch = e.touches[0];
         const rect = $container.getBoundingClientRect();
         startX = touch.clientX - rect.left;
@@ -647,7 +574,12 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if (art.video) {
           const styleFilter = art.video.style.filter;
           const match = styleFilter.match(/brightness\((\d+)%\)/);
-          currentBrightness = match ? parseInt(match[1], 10) : 100;
+          if (match) {
+            currentBrightness = parseInt(match[1], 10);
+          } else {
+            // 如果沒有設置，預設為 100
+            currentBrightness = 100;
+          }
         }
 
         // 啟動長按計時器 (500ms)
@@ -664,9 +596,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       };
 
       const handleTouchMove = (e: TouchEvent) => {
-        const target = e.target as HTMLElement;
-        if (isUiTap(target)) return;
-
         const touch = e.touches[0];
         const rect = $container.getBoundingClientRect();
         const currentX = touch.clientX - rect.left;
@@ -675,23 +604,30 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         const deltaX = Math.abs(currentX - startX);
         const deltaY = Math.abs(currentY - startY);
 
-        // 如果已經在長按模式，完全鎖定
+        // 如果已經在長按模式，完全鎖定（不允許任何其他手勢）
         if (activeGestureMode === 'longpress') {
           if (e.cancelable) e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
+          e.stopPropagation(); // 阻止事件冒泡
+          e.stopImmediatePropagation(); // 阻止同元素其他事件
           return;
         }
 
+        // 如果還在長按計時中且移動明顯，取消計時器
         if (longPressTimer && (deltaX > 20 || deltaY > 20)) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
 
+        // 判斷移動方向（降低最小閾值）
         const minMoveThreshold = 10;
-        if (deltaX < minMoveThreshold && deltaY < minMoveThreshold) return;
+        if (deltaX < minMoveThreshold && deltaY < minMoveThreshold) {
+          return; // 移動太小，不處理
+        }
 
-        if (activeGestureMode === 'seeking') return;
+        // 如果已經進入某個模式，持續該模式（鎖定方向）
+        if (activeGestureMode === 'seeking') {
+          return;
+        }
 
         if (activeGestureMode === 'adjusting') {
           if (e.cancelable) e.preventDefault();
@@ -700,19 +636,32 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           const xPercent = startX / rect.width;
 
           if (xPercent < 0.3) {
+            // 左側：亮度調整 (平滑化處理)
+            // 降低靈敏度係數
             const sensitivity = 0.5;
             const change = yChange * sensitivity;
+
+            // 基於記錄的起始值計算，而不是每次都讀 DOM
+            // 這裡我們需要的是增量更新
+            // 但為了平滑，我們使用 currentBrightness 累積
             const targetBrightness = Math.max(
               10,
               Math.min(200, currentBrightness + change)
             );
+
+            // 應用到 DOM
             if (art.video) {
               art.video.style.filter = `brightness(${Math.round(
                 targetBrightness
               )}%)`;
             }
             art.notice.show = `☀️ 亮度: ${Math.round(targetBrightness)}%`;
+
+            // 注意：這裡不更新 currentBrightness，因為 startY 未重置
+            // 這種模式下是 "拖曳距離 -> 亮度變化量" 的映射
+            // 如果要實現 "增量累積"，需要重置 startY
           } else if (xPercent > 0.7) {
+            // 右側：音量調整
             const volumeChange = yChange * 0.005;
             const newVolume = Math.max(
               0,
@@ -722,7 +671,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
           }
 
+          // 重置起點，實現平滑增量更新
           startY = currentY;
+          // 對於亮度，更新基準值
           if (xPercent < 0.3) {
             const change = yChange * 0.5;
             currentBrightness = Math.max(
@@ -730,9 +681,11 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               Math.min(200, currentBrightness + change)
             );
           }
+
           return;
         }
 
+        // 首次判定方向
         const horizontalTolerance = 0.6;
         const verticalTolerance = 0.6;
 
@@ -747,25 +700,18 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if (deltaY > deltaX / verticalTolerance && deltaY > minMoveThreshold) {
           activeGestureMode = 'adjusting';
           if (e.cancelable) e.preventDefault();
+          // 初始化亮度基準值 (防止跳變)
+          if (art.video) {
+            const styleFilter = art.video.style.filter;
+            const match = styleFilter.match(/brightness\((\d+)%\)/);
+            currentBrightness = match ? parseInt(match[1], 10) : 100;
+          }
           return;
         }
       };
 
-      let singleTapTimer: NodeJS.Timeout | null = null;
-
       const handleTouchEnd = (e: TouchEvent) => {
         if (longPressTimer) clearTimeout(longPressTimer);
-
-        const target = e.target as HTMLElement;
-        const isUi = isUiTap(target);
-
-        // 如果控制列已顯示，或者點擊的是 UI 元素，則不啟動自定義手勢邏輯
-        if (art.controls.show || isUi) {
-          activeGestureMode = 'none';
-          lastTapTime = 0;
-          lastTapSide = null;
-          return;
-        }
 
         // 長按模式結束
         if (activeGestureMode === 'longpress') {
@@ -792,74 +738,39 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           return;
         }
 
-        // 雙擊與單擊檢測
+        // 雙擊檢測
         const touch = e.changedTouches[0];
         const rect = $container.getBoundingClientRect();
         const x = touch.clientX - rect.left;
         const xPercent = x / rect.width;
         const now = Date.now();
 
-        // 判斷是否為「輕觸」(Tap) 而非滑動
-        if (now - startTime < 300) {
-          // 只有在處理自定義手勢時才攔截事件
-          if (e.cancelable) e.preventDefault();
-          e.stopPropagation();
+        if (now - startTime < 250) {
+          let side: 'left' | 'right' | null = null;
+          if (xPercent < 0.25) side = 'left';
+          else if (xPercent > 0.75) side = 'right';
 
-          let side: 'left' | 'right' | 'middle' | null = null;
-          if (xPercent < 0.33) side = 'left';
-          else if (xPercent > 0.66) side = 'right';
-          else side = 'middle';
-
-          // 檢測雙擊
-          if (now - lastTapTime < 300 && lastTapSide === side) {
-            if (singleTapTimer) {
-              clearTimeout(singleTapTimer);
-              singleTapTimer = null;
-            }
-
-            if (side === 'left') {
-              art.seek = Math.max(0, art.currentTime - 10);
-              art.notice.show = '⏪ 後退 10 秒';
-            } else if (side === 'right') {
-              art.seek = Math.min(art.duration, art.currentTime + 10);
-              art.notice.show = '⏩ 快進 10 秒';
-            } else if (side === 'middle') {
-              art.toggle();
-            }
-
-            lastTapTime = 0;
-            lastTapSide = null;
-          } else {
-            // 第一下點擊：啟動延遲計時器
-            lastTapTime = now;
-            lastTapSide = side;
-
-            if (singleTapTimer) clearTimeout(singleTapTimer);
-            singleTapTimer = setTimeout(() => {
-              // 如果 300ms 內沒點第二下，才執行顯示/隱藏控制列
-              art.controls.show = !art.controls.show;
-              singleTapTimer = null;
+          if (side) {
+            if (now - lastTapTime < 300 && lastTapSide === side) {
+              // 雙擊成功
+              if (side === 'left') {
+                art.seek = Math.max(0, art.currentTime - 10);
+                art.notice.show = '⏪ 後退 10 秒';
+              } else {
+                art.seek = Math.min(art.duration, art.currentTime + 10);
+                art.notice.show = '⏩ 快進 10 秒';
+              }
               lastTapTime = 0;
               lastTapSide = null;
-            }, 300);
+            } else {
+              lastTapTime = now;
+              lastTapSide = side;
+            }
           }
         }
 
         activeGestureMode = 'none';
       };
-
-      // 監聽自定義控制列的交互，防止自動縮回
-      const $customControls = $container.querySelector(
-        '#artplayer-custom-controls'
-      );
-      if ($customControls) {
-        const resetTimer = () => {
-          if (art.controls.show) art.controls.show = true;
-        };
-        ['touchstart', 'mousemove', 'mousedown'].forEach((ev) => {
-          $customControls.addEventListener(ev, resetTimer, { passive: true });
-        });
-      }
 
       // 使用 capture 選項確保我們先於 Artplayer 內部處理
       const eventOptions = { passive: false, capture: true };

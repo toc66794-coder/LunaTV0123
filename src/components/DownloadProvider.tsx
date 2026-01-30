@@ -79,7 +79,6 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
         } else {
           updateTask(url, { status: 'failed', error: result.error });
         }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
         updateTask(url, { status: 'failed', error: err.message || '未知錯誤' });
       }

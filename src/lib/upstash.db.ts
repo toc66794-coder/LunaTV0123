@@ -17,47 +17,6 @@ function ensureStringArray(value: any[]): string[] {
   return value.map((item) => String(item));
 }
 
-function normalizePlayRecord(input: any): PlayRecord {
-  const now = Date.now();
-  const base: PlayRecord = {
-    title: '',
-    source_name: '',
-    cover: '',
-    year: '',
-    index: 1,
-    total_episodes: 0,
-    play_time: 0,
-    total_time: 0,
-    save_time: now,
-    search_title: '',
-  };
-  const o: any = typeof input === 'object' && input ? input : {};
-  const r: PlayRecord = {
-    title: typeof o.title === 'string' ? o.title : base.title,
-    source_name:
-      typeof o.source_name === 'string' ? o.source_name : base.source_name,
-    cover: typeof o.cover === 'string' ? o.cover : base.cover,
-    year: typeof o.year === 'string' ? o.year : base.year,
-    index: typeof o.index === 'number' && o.index >= 1 ? o.index : base.index,
-    total_episodes:
-      typeof o.total_episodes === 'number' && o.total_episodes >= 0
-        ? o.total_episodes
-        : base.total_episodes,
-    play_time:
-      typeof o.play_time === 'number' && o.play_time >= 0
-        ? o.play_time
-        : base.play_time,
-    total_time:
-      typeof o.total_time === 'number' && o.total_time >= 0
-        ? o.total_time
-        : base.total_time,
-    save_time: typeof o.save_time === 'number' ? o.save_time : now,
-    search_title:
-      typeof o.search_title === 'string' ? o.search_title : base.search_title,
-  };
-  return r;
-}
-
 // 添加Upstash Redis操作重试包装器
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -110,24 +69,10 @@ export class UpstashRedisStorage implements IStorage {
     userName: string,
     key: string
   ): Promise<PlayRecord | null> {
-    const raw = await withRetry(() =>
+    const val = await withRetry(() =>
       this.client.get(this.prKey(userName, key))
     );
-    if (raw === null) return null;
-    let obj: any = raw;
-    if (typeof raw === 'string') {
-      try {
-        obj = JSON.parse(raw);
-      } catch {
-        const fresh = normalizePlayRecord(null);
-        await withRetry(() =>
-          this.client.set(this.prKey(userName, key), fresh)
-        );
-        return fresh;
-      }
-    }
-    const normalized = normalizePlayRecord(obj);
-    return normalized;
+    return val ? (val as PlayRecord) : null;
   }
 
   async setPlayRecord(
@@ -135,8 +80,7 @@ export class UpstashRedisStorage implements IStorage {
     key: string,
     record: PlayRecord
   ): Promise<void> {
-    const safe = normalizePlayRecord(record);
-    await withRetry(() => this.client.set(this.prKey(userName, key), safe));
+    await withRetry(() => this.client.set(this.prKey(userName, key), record));
   }
 
   async getAllPlayRecords(
@@ -147,27 +91,14 @@ export class UpstashRedisStorage implements IStorage {
     if (keys.length === 0) return {};
 
     const result: Record<string, PlayRecord> = {};
-    // 使用 mget 批量獲取
-    const values = await withRetry(() => this.client.mget(keys));
-
-    keys.forEach((fullKey, index) => {
-      const value = values[index];
-      if (value !== null) {
-        let obj: any = value;
-        if (typeof value === 'string') {
-          try {
-            obj = JSON.parse(value);
-          } catch {
-            obj = null;
-          }
-        }
-        const normalized = normalizePlayRecord(obj);
-        // 為了確保格式一致，這裡不主動 set 回去，除非真的有變動
+    for (const fullKey of keys) {
+      const value = await withRetry(() => this.client.get(fullKey));
+      if (value) {
+        // 截取 source+id 部分
         const keyPart = ensureString(fullKey.replace(`u:${userName}:pr:`, ''));
-        result[keyPart] = normalized;
+        result[keyPart] = value as PlayRecord;
       }
-    });
-
+    }
     return result;
   }
 
@@ -203,16 +134,13 @@ export class UpstashRedisStorage implements IStorage {
     if (keys.length === 0) return {};
 
     const result: Record<string, Favorite> = {};
-    const values = await withRetry(() => this.client.mget(keys));
-
-    keys.forEach((fullKey, index) => {
-      const value = values[index];
+    for (const fullKey of keys) {
+      const value = await withRetry(() => this.client.get(fullKey));
       if (value) {
         const keyPart = ensureString(fullKey.replace(`u:${userName}:fav:`, ''));
         result[keyPart] = value as Favorite;
       }
-    });
-
+    }
     return result;
   }
 
@@ -441,14 +369,6 @@ export class UpstashRedisStorage implements IStorage {
   async get(userName: string, key: string): Promise<any | null> {
     const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
     return withRetry(() => this.client.get(fullKey));
-  }
-
-  async mget(userName: string, keys: string[]): Promise<any[]> {
-    const fullKeys = keys.map((k) =>
-      userName === 'GLOBAL' ? k : `u:${userName}:g:${k}`
-    );
-    if (fullKeys.length === 0) return [];
-    return withRetry(() => this.client.mget(...fullKeys));
   }
 
   async set(

@@ -12,15 +12,15 @@ interface Source {
 interface TVSettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  // Current disabled source keys (Blacklist)
-  disabledSources: string[];
+  // Current enabled source keys
+  enabledSources: string[];
   onToggleSource: (key: string) => void;
 }
 
 export function TVSettingsPanel({
   isOpen,
   onClose,
-  disabledSources,
+  enabledSources,
   onToggleSource,
 }: TVSettingsPanelProps) {
   const [availableSources, setAvailableSources] = useState<Source[]>([]);
@@ -82,7 +82,7 @@ export function TVSettingsPanel({
             ) : (
               <div className='grid grid-cols-2 md:grid-cols-3 gap-4'>
                 {availableSources.map((source) => {
-                  const isEnabled = !disabledSources.includes(source.key);
+                  const isEnabled = enabledSources.includes(source.key);
                   return (
                     <button
                       key={source.key}

@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
 
 import { TVSettingsPanel } from '@/components/tv/TVSettingsPanel';
 import { TVVideoCard } from '@/components/tv/TVVideoCard';
@@ -18,10 +17,13 @@ export default function TVHomePage() {
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
+  const [hotVariety, setHotVariety] = useState<DoubanItem[]>([]);
+  const [movieCategory, setMovieCategory] = useState<
+    '热门电影' | '最新电影' | '豆瓣高分' | '冷门佳片'
+  >('热门电影');
 
   // Player State
   const [isPlaying, setIsPlaying] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [videoDetail, setVideoDetail] = useState<any>(null);
   const [isSearchingSources, setIsSearchingSources] = useState(false);
   const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
@@ -36,16 +38,15 @@ export default function TVHomePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Search Fallback State
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
   const [hiddenResultsCount, setHiddenResultsCount] = useState(0);
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [disabledSources, setDisabledSources] = useState<string[]>([]);
-
-  // Focus management refs
-  const detailModalRef = React.useRef<HTMLDivElement>(null);
+  const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [allSearchResults, setAllSearchResults] = useState<any[]>([]);
+  const [showSwitchList, setShowSwitchList] = useState(false);
 
   // Check Auth
   useEffect(() => {
@@ -70,6 +71,22 @@ export default function TVHomePage() {
       setDisabledSources([]);
     }
 
+    // 讀取可用源列表，並依黑名單計算啟用源
+    fetch('/api/sources')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.success && Array.isArray(data.data)) {
+          const all = data.data.map((s: any) => s.key);
+          const enabled = all.filter(
+            (k: string) => !disabledSources.includes(k)
+          );
+          setEnabledSources(enabled);
+        }
+      })
+      .catch(() => {
+        setEnabledSources([]);
+      });
+
     // Dynamic import to avoid SSR issues with document.cookie
     import('@/lib/auth').then(({ getAuthInfoFromBrowserCookie }) => {
       const info = getAuthInfoFromBrowserCookie();
@@ -85,6 +102,12 @@ export default function TVHomePage() {
         ? prev.filter((k) => k !== key) // 如果在黑名單中，移除 (啟用)
         : [...prev, key]; // 如果不在黑名單中，加入 (禁用)
       localStorage.setItem('tv_disabled_sources', JSON.stringify(next));
+      // 同步 enabledSources
+      setEnabledSources((prevEnabled) => {
+        const setAll = new Set(prevEnabled.concat(key));
+        const enabled = Array.from(setAll).filter((k) => !next.includes(k));
+        return enabled;
+      });
       return next;
     });
   };
@@ -103,18 +126,43 @@ export default function TVHomePage() {
         setHotMovies([]);
         setHotTvShows([]);
         setHotAnimation([]);
+        setHotVariety([]);
 
         // Determine what to fetch based on filterMode
         const promises = [];
 
         if (filterMode === 'all' || filterMode === 'movie') {
-          promises.push(
-            getDoubanCategories({
-              kind: 'movie',
-              category: '热门',
-              type: '全部',
-            }).then((res) => (res.code === 200 ? setHotMovies(res.list) : null))
-          );
+          if (movieCategory === '热门电影') {
+            promises.push(
+              getDoubanCategories({
+                kind: 'movie',
+                category: '热门',
+                type: '全部',
+              }).then((res) =>
+                res.code === 200 ? setHotMovies(res.list) : null
+              )
+            );
+          } else {
+            // 使用列表接口按標籤獲取
+            const tagMap: Record<string, string> = {
+              最新电影: '最新',
+              豆瓣高分: '豆瓣高分',
+              冷门佳片: '冷门佳片',
+            };
+            const tag = tagMap[movieCategory] || '热门';
+            promises.push(
+              import('@/lib/douban.client').then(({ getDoubanList }) =>
+                getDoubanList({
+                  tag,
+                  type: 'movie',
+                  pageLimit: 20,
+                  pageStart: 0,
+                }).then((res) =>
+                  res.code === 200 ? setHotMovies(res.list) : null
+                )
+              )
+            );
+          }
         }
 
         if (filterMode === 'all' || filterMode === 'tv') {
@@ -149,9 +197,7 @@ export default function TVHomePage() {
               category: '热门',
               type: '综艺',
             }).then((res) =>
-              res.code === 200
-                ? setHotTvShows((prev) => [...prev, ...res.list])
-                : null
+              res.code === 200 ? setHotVariety(res.list) : null
             )
           );
         }
@@ -174,7 +220,6 @@ export default function TVHomePage() {
       setVideoDetail(null);
       setSelectedEpisodeIndex(0);
       setManualSearchResults([]);
-      setHiddenResultsCount(0);
       return;
     }
 
@@ -183,7 +228,6 @@ export default function TVHomePage() {
         setIsSearchingSources(true);
         setVideoDetail(null);
         setManualSearchResults([]);
-        setHiddenResultsCount(0);
 
         // 1. Search for sources
         const searchRes = await fetch(
@@ -192,105 +236,51 @@ export default function TVHomePage() {
         const searchData = await searchRes.json();
         let results = searchData.results || [];
 
-        // Debug: Log search results before filtering
-        // eslint-disable-next-line no-console
-        console.log(
-          '[TV Mode] Search results for',
-          selectedMovie.title,
-          ':',
-          results.length
-        );
-        // eslint-disable-next-line no-console
-        console.log('[TV Mode] Disabled sources:', disabledSources);
-
         // 0. Filter by disabled sources (Blacklist)
         if (disabledSources.length > 0) {
-          const beforeFilter = results.length;
           results = results.filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (r: any) => !disabledSources.includes(r.source)
           );
-          // eslint-disable-next-line no-console
-          console.log(
-            '[TV Mode] Filtered from',
-            beforeFilter,
-            'to',
-            results.length,
-            'sources'
-          );
-          setHiddenResultsCount(beforeFilter - results.length);
         }
+        // 保留所有搜尋結果以便換源顯示
+        setAllSearchResults(results);
 
         if (results.length === 0) {
           setIsSearchingSources(false);
           return;
         }
 
-        // 2. Smart Matching Strategy (Iterative)
-        const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
-        const target = normalize(selectedMovie.title);
+        // 2. Fuzzy Matching Strategy
+        // Priority 1: Exact Title Match
+        let match = results.find((r: any) => r.title === selectedMovie.title);
 
-        // Sort results: Exact match > Contains > Others
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        results.sort((a: any, b: any) => {
-          const titleA = normalize(a.title);
-          const titleB = normalize(b.title);
-
-          if (titleA === target && titleB !== target) return -1;
-          if (titleA !== target && titleB === target) return 1;
-
-          if (titleA.includes(target) && !titleB.includes(target)) return -1;
-          if (!titleA.includes(target) && titleB.includes(target)) return 1;
-
-          return 0;
-        });
-
-        // Try top 5 candidates
-        let validDetail = null;
-        const candidates = results.slice(0, 5);
-
-        for (const candidate of candidates) {
-          try {
-            // eslint-disable-next-line no-console
-            console.log(
-              `[TV Mode] Checking candidate: ${candidate.title} (${candidate.source})`
-            );
-            const detailRes = await fetch(
-              `/api/detail?source=${candidate.source}&id=${candidate.id}`
-            );
-            const detailData = await detailRes.json();
-
-            if (
-              detailData &&
-              detailData.episodes &&
-              detailData.episodes.length > 0 &&
-              !(detailData.episodes.length === 1 && !detailData.episodes[0])
-            ) {
-              validDetail = detailData;
-              // eslint-disable-next-line no-console
-              console.log(
-                `[TV Mode] Auto-match success: ${candidate.title} (${candidate.source})`
-              );
-              break; // Found a valid source
-            }
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn(`[TV Mode] Candidate check failed`, e);
-          }
-        }
-
-        if (validDetail) {
-          setVideoDetail(validDetail);
-        } else {
-          setVideoDetail(null);
-          // eslint-disable-next-line no-console
-          console.log(
-            '[TV Mode] All top candidates failed auto-match, falling back to manual list'
+        // Priority 2: Title inclusion (ignore spaces/case)
+        if (!match) {
+          const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+          const target = normalize(selectedMovie.title);
+          match = results.find(
+            (r: any) =>
+              normalize(r.title).includes(target) ||
+              target.includes(normalize(r.title))
           );
         }
 
-        // Always populate manual list so user can switch
-        setManualSearchResults(results);
+        if (match) {
+          // 3. Fetch Details
+          const detailRes = await fetch(
+            `/api/detail?source=${match.source}&id=${match.id}`
+          );
+          const detailData = await detailRes.json();
+          setVideoDetail(detailData);
+          // 若為單集內容，直接自動播放
+          if (detailData?.episodes && detailData.episodes.length === 1) {
+            setSelectedEpisodeIndex(0);
+            setIsPlaying(true);
+          }
+        } else {
+          // If automatic matching fails or is unsure, populate manual list
+          setManualSearchResults(results);
+        }
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('Failed to search sources', err);
@@ -300,24 +290,8 @@ export default function TVHomePage() {
     };
 
     searchSource();
-  }, [selectedMovie, disabledSources]);
-
-  // Manage focus scope when detail modal opens/closes
-  useEffect(() => {
-    if (selectedMovie && detailModalRef.current) {
-      // Import setFocusScope dynamically
-      import('@/components/tv/TVFocusProvider').then(({ setFocusScope }) => {
-        setFocusScope(detailModalRef.current);
-      });
-    } else {
-      // Reset focus scope when modal closes
-      import('@/components/tv/TVFocusProvider').then(({ setFocusScope }) => {
-        setFocusScope(null);
-      });
-    }
   }, [selectedMovie]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleManualSelect = async (source: any) => {
     try {
       setIsSearchingSources(true);
@@ -325,25 +299,10 @@ export default function TVHomePage() {
         `/api/detail?source=${source.source}&id=${source.id}`
       );
       const detailData = await detailRes.json();
-
-      // Check if episodes exist
-      if (
-        !detailData.episodes ||
-        detailData.episodes.length === 0 ||
-        (detailData.episodes.length === 1 && !detailData.episodes[0])
-      ) {
-        // eslint-disable-next-line no-alert
-        alert('該線路無效或無集數，請選擇其他線路');
-        return;
-      }
-
       setVideoDetail(detailData);
       setManualSearchResults([]); // Clear manual list after selection
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error(e);
-      // eslint-disable-next-line no-alert
-      alert('獲取線路詳情失敗');
     } finally {
       setIsSearchingSources(false);
     }
@@ -351,7 +310,6 @@ export default function TVHomePage() {
 
   return (
     <div className='flex flex-col space-y-12 p-10 pb-20 relative'>
-      {/* ... keeping previous code ... */}
       {/* Top Navigation */}
       <header className='flex items-center justify-between z-20 relative'>
         <h1 className='text-4xl font-extrabold tracking-tighter text-blue-500'>
@@ -410,6 +368,22 @@ export default function TVHomePage() {
               />
             </svg>
           </button>
+          {(filterMode === 'all' || filterMode === 'movie') && (
+            <div className='flex items-center gap-2'>
+              <span className='text-gray-400'>電影分類:</span>
+              <select
+                data-tv-focusable='true'
+                className='px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg outline-none focus:border-blue-500'
+                value={movieCategory}
+                onChange={(e) => setMovieCategory(e.target.value as any)}
+              >
+                <option value='热门电影'>热门电影</option>
+                <option value='最新电影'>最新电影</option>
+                <option value='豆瓣高分'>豆瓣高分</option>
+                <option value='冷门佳片'>冷门佳片</option>
+              </select>
+            </div>
+          )}
 
           <button
             data-tv-focusable='true'
@@ -443,7 +417,7 @@ export default function TVHomePage() {
       <TVSettingsPanel
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        disabledSources={disabledSources}
+        enabledSources={enabledSources}
         onToggleSource={handleToggleSource}
       />
 
@@ -467,7 +441,6 @@ export default function TVHomePage() {
                   : 'hover:bg-gray-800 text-gray-300'
               } focus:bg-blue-500 focus:text-white outline-none`}
               onClick={() => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 setFilterMode(bg.id as any);
                 setIsFilterOpen(false);
               }}
@@ -504,10 +477,8 @@ export default function TVHomePage() {
               </section>
             )}
 
-          {/* 熱門劇集/綜藝 */}
-          {(filterMode === 'all' ||
-            filterMode === 'tv' ||
-            filterMode === 'variety') &&
+          {/* 熱門劇集 */}
+          {(filterMode === 'all' || filterMode === 'tv') &&
             hotTvShows.length > 0 && (
               <section>
                 <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-green-500 pl-4'>
@@ -543,19 +514,35 @@ export default function TVHomePage() {
                 </div>
               </section>
             )}
+
+          {/* 熱門綜藝 */}
+          {(filterMode === 'all' || filterMode === 'variety') &&
+            hotVariety.length > 0 && (
+              <section>
+                <h2 className='text-2xl font-semibold mb-6 ml-2 border-l-4 border-yellow-500 pl-4'>
+                  熱門綜藝
+                </h2>
+                <div className='flex space-x-8 overflow-x-auto pb-8 scrollbar-hide px-2'>
+                  {hotVariety.map((v) => (
+                    <TVVideoCard
+                      key={'variety-' + v.id}
+                      movie={v}
+                      onSelect={() => setSelectedMovie(v)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
         </>
       )}
 
       {/* 詳情模式 */}
       {selectedMovie && (
-        <div
-          ref={detailModalRef}
-          className='fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-20 animate-in fade-in zoom-in duration-300'
-        >
+        <div className='fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-20 animate-in fade-in zoom-in duration-300'>
           <div className='max-w-7xl w-full flex space-x-16'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={processImageUrl(selectedMovie.poster)}
+              src={selectedMovie.poster}
               className='w-96 rounded-2xl shadow-2xl border-4 border-white/10'
               alt=''
             />
@@ -574,9 +561,24 @@ export default function TVHomePage() {
                     : videoDetail
                     ? '播放列表'
                     : manualSearchResults.length > 0
-                    ? '自動匹配線路無效，請從下方選擇其他線路'
+                    ? '請選擇可用片源 (自動匹配失敗)'
                     : '暫無可用線路'}
                 </h3>
+                {allSearchResults.length > 0 && (
+                  <div className='pt-2'>
+                    <button
+                      data-tv-focusable='true'
+                      className='px-6 py-2 rounded-xl border-2 border-gray-800 bg-gray-900 text-gray-200 hover:border-yellow-500 focus:border-yellow-500 outline-none'
+                      onClick={() => {
+                        const next = !showSwitchList;
+                        setShowSwitchList(next);
+                        setManualSearchResults(next ? allSearchResults : []);
+                      }}
+                    >
+                      {showSwitchList ? '關閉換源' : '換源'}
+                    </button>
+                  </div>
+                )}
 
                 {/* 1. 正常顯示集數 */}
                 {videoDetail && (
@@ -603,10 +605,9 @@ export default function TVHomePage() {
                   </div>
                 )}
 
-                {/* 2. 顯示手動搜尋結果 (Fallback) */}
-                {!videoDetail && manualSearchResults.length > 0 && (
+                {/* 2. 顯示手動搜尋結果/換源列表 */}
+                {manualSearchResults.length > 0 && (
                   <div className='flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-4'>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {manualSearchResults.map((res: any, idx: number) => (
                       <button
                         key={idx}
@@ -626,59 +627,18 @@ export default function TVHomePage() {
                 )}
 
                 {/* 3. 真的沒救了 */}
-                {/* 3. 真的沒救了 */}
                 {!isSearchingSources &&
                   !videoDetail &&
                   manualSearchResults.length === 0 && (
                     <div className='p-6 bg-red-900/20 border border-red-500/30 rounded-xl'>
-                      {hiddenResultsCount > 0 ? (
-                        <div className='space-y-2'>
-                          <p className='text-red-400 text-xl font-bold'>
-                            ⚠️ 找不到可用線路
-                          </p>
-                          <p className='text-gray-300'>
-                            系統找到了 {hiddenResultsCount}{' '}
-                            個資源，但都因為您的「來源過濾」設定而被隱藏了。
-                          </p>
-                          <div className='text-yellow-400 mt-2 p-2 bg-yellow-900/20 rounded border border-yellow-700/50 text-sm'>
-                            💡 請按遙控器{' '}
-                            <span className='font-bold bg-gray-700 px-1 rounded'>
-                              設定
-                            </span>{' '}
-                            鍵，然後檢查「來源過濾」選項。
-                          </div>
-                        </div>
-                      ) : (
-                        <p className='text-red-400 text-xl'>
-                          抱歉，找不到 "{selectedMovie.title}" 的相關播放資源。
-                        </p>
-                      )}
+                      <p className='text-red-400 text-xl'>
+                        抱歉，找不到 "{selectedMovie.title}" 的相關播放資源。
+                      </p>
                     </div>
                   )}
-
-                {/* 顯示當前來源資訊 */}
-                {videoDetail && (
-                  <div className='mt-2 mb-4 px-4 py-2 bg-gray-800/50 rounded-lg inline-block'>
-                    <span className='text-gray-400'>當前來源：</span>
-                    <span className='text-blue-400 font-bold'>
-                      {videoDetail.source_name || videoDetail.source}
-                    </span>
-                  </div>
-                )}
               </div>
 
               <div className='flex space-x-6 pt-8'>
-                {/* 換源按鈕 */}
-                {videoDetail && manualSearchResults.length > 1 && (
-                  <button
-                    data-tv-focusable='true'
-                    className='px-12 py-4 bg-blue-900/50 border-2 border-blue-500 rounded-xl text-2xl font-bold focus:bg-blue-800 transition-all hover:bg-blue-800/80 text-blue-100'
-                    onClick={() => setVideoDetail(null)}
-                  >
-                    換源 ({manualSearchResults.length})
-                  </button>
-                )}
-
                 <button
                   data-tv-focusable='true'
                   className='px-12 py-4 bg-gray-800 rounded-xl text-2xl font-bold focus:ring-8 focus:ring-gray-600 outline-none transition-all hover:bg-gray-700'
@@ -703,22 +663,7 @@ export default function TVHomePage() {
                 : ''
             }`}
             poster={selectedMovie.poster}
-            currentEpisode={selectedEpisodeIndex + 1}
-            totalEpisodes={videoDetail.episodes.length}
             onClose={() => setIsPlaying(false)}
-            onNext={() => {
-              if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
-                setSelectedEpisodeIndex(selectedEpisodeIndex + 1);
-              }
-            }}
-            onPrev={() => {
-              if (selectedEpisodeIndex > 0) {
-                setSelectedEpisodeIndex(selectedEpisodeIndex - 1);
-              }
-            }}
-            onEpisodeSelect={(episode) => {
-              setSelectedEpisodeIndex(episode - 1);
-            }}
             onEnded={() => {
               if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
                 setSelectedEpisodeIndex(selectedEpisodeIndex + 1);

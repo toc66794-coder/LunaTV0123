@@ -66,7 +66,6 @@ export const calculateSourceScore = (
  */
 export const preferBestSource = async (
   sources: SearchResult[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onProgress?: (info: Map<string, any>) => void
 ): Promise<SearchResult> => {
   if (sources.length === 1) return sources[0];
@@ -76,7 +75,6 @@ export const preferBestSource = async (
     testResult: { quality: string; loadSpeed: string; pingTime: number };
   }> = [];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const videoInfoMap = new Map<string, any>();
 
   // 限制測速範圍（前 5 個），避免對伺服器造成過大壓力
