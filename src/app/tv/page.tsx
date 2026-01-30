@@ -222,44 +222,67 @@ export default function TVHomePage() {
           return;
         }
 
-        // 2. Fuzzy Matching Strategy
-        // Priority 1: Exact Title Match
+        // 2. Smart Matching Strategy (Iterative)
+        const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+        const target = normalize(selectedMovie.title);
+
+        // Sort results: Exact match > Contains > Others
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let match = results.find((r: any) => r.title === selectedMovie.title);
+        results.sort((a: any, b: any) => {
+          const titleA = normalize(a.title);
+          const titleB = normalize(b.title);
 
-        // Priority 2: Title inclusion (ignore spaces/case)
-        if (!match) {
-          const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, '');
-          const target = normalize(selectedMovie.title);
-          match = results.find(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (r: any) =>
-              normalize(r.title).includes(target) ||
-              target.includes(normalize(r.title))
-          );
-        }
+          if (titleA === target && titleB !== target) return -1;
+          if (titleA !== target && titleB === target) return 1;
 
-        if (match) {
-          // 3. Fetch Details
-          const detailRes = await fetch(
-            `/api/detail?source=${match.source}&id=${match.id}`
-          );
-          const detailData = await detailRes.json();
+          if (titleA.includes(target) && !titleB.includes(target)) return -1;
+          if (!titleA.includes(target) && titleB.includes(target)) return 1;
 
-          // Only auto-select if it has episodes
-          if (
-            detailData &&
-            detailData.episodes &&
-            detailData.episodes.length > 0
-          ) {
-            setVideoDetail(detailData);
-          } else {
-            setVideoDetail(null);
+          return 0;
+        });
+
+        // Try top 5 candidates
+        let validDetail = null;
+        const candidates = results.slice(0, 5);
+
+        for (const candidate of candidates) {
+          try {
             // eslint-disable-next-line no-console
             console.log(
-              '[TV Mode] Auto-match found but no episodes, falling back to manual list'
+              `[TV Mode] Checking candidate: ${candidate.title} (${candidate.source})`
             );
+            const detailRes = await fetch(
+              `/api/detail?source=${candidate.source}&id=${candidate.id}`
+            );
+            const detailData = await detailRes.json();
+
+            if (
+              detailData &&
+              detailData.episodes &&
+              detailData.episodes.length > 0 &&
+              !(detailData.episodes.length === 1 && !detailData.episodes[0])
+            ) {
+              validDetail = detailData;
+              // eslint-disable-next-line no-console
+              console.log(
+                `[TV Mode] Auto-match success: ${candidate.title} (${candidate.source})`
+              );
+              break; // Found a valid source
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn(`[TV Mode] Candidate check failed`, e);
           }
+        }
+
+        if (validDetail) {
+          setVideoDetail(validDetail);
+        } else {
+          setVideoDetail(null);
+          // eslint-disable-next-line no-console
+          console.log(
+            '[TV Mode] All top candidates failed auto-match, falling back to manual list'
+          );
         }
 
         // Always populate manual list so user can switch
