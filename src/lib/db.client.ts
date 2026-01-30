@@ -99,6 +99,7 @@ const SEARCH_HISTORY_LIMIT = 20;
 // API 節流相關（僅客戶端）
 const apiSyncThrottles: Record<string, number> = {};
 const SYNC_THROTTLE_INTERVAL = 60 * 1000; // 60 秒節流
+let hasScheduledInitialSync = false;
 
 // ---- 缓存管理器 ----
 class HybridCacheManager {
@@ -467,26 +468,30 @@ if (typeof window !== 'undefined') {
  */
 async function fetchWithAuth(
   url: string,
-  options?: RequestInit
+  options?: RequestInit,
+  redirectOn401 = true
 ): Promise<Response> {
   const res = await fetch(url, options);
   if (!res.ok) {
     // 如果是 401 未授权，跳转到登录页面
     if (res.status === 401) {
-      // 调用 logout 接口
-      try {
-        await fetch('/api/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-      } catch (error) {
-        console.error('注销请求失败:', error);
+      if (redirectOn401) {
+        try {
+          await fetch('/api/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (error) {
+          console.error('注销请求失败:', error);
+        }
+        const currentUrl = window.location.pathname + window.location.search;
+        const loginUrl = new URL('/login', window.location.origin);
+        loginUrl.searchParams.set('redirect', currentUrl);
+        window.location.href = loginUrl.toString();
+        throw new Error('用户未授权，已跳转到登录页面');
+      } else {
+        throw new Error('用户未授权');
       }
-      const currentUrl = window.location.pathname + window.location.search;
-      const loginUrl = new URL('/login', window.location.origin);
-      loginUrl.searchParams.set('redirect', currentUrl);
-      window.location.href = loginUrl.toString();
-      throw new Error('用户未授权，已跳转到登录页面');
     }
     throw new Error(`请求 ${url} 失败: ${res.status}`);
   }
@@ -494,7 +499,7 @@ async function fetchWithAuth(
 }
 
 async function fetchFromApi<T>(path: string): Promise<T> {
-  const res = await fetchWithAuth(path);
+  const res = await fetchWithAuth(path, undefined, false);
   return (await res.json()) as T;
 }
 
@@ -523,39 +528,52 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
     const cachedData = cacheManager.getCachedPlayRecords();
 
     if (cachedData) {
-      // 返回缓存数据，同时后台异步更新
-      fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
-        .then((freshData) => {
-          // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
+      const runSync = () => {
+        fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
+          .then((freshData) => {
+            if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
+              cacheManager.cachePlayRecords(freshData);
+              window.dispatchEvent(
+                new CustomEvent('playRecordsUpdated', {
+                  detail: freshData,
+                })
+              );
+            }
+          })
+          .catch((err) => {
+            console.warn('后台同步播放记录失败:', err);
+          });
+      };
+      if (!hasScheduledInitialSync) {
+        hasScheduledInitialSync = true;
+        setTimeout(runSync, 3000);
+      } else {
+        runSync();
+      }
+
+      return cachedData;
+    } else {
+      const runSync = () => {
+        fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
+          .then((freshData) => {
             cacheManager.cachePlayRecords(freshData);
-            // 触发数据更新事件，供组件监听
             window.dispatchEvent(
               new CustomEvent('playRecordsUpdated', {
                 detail: freshData,
               })
             );
-          }
-        })
-        .catch((err) => {
-          console.warn('后台同步播放记录失败:', err);
-          triggerGlobalError('后台同步播放记录失败');
-        });
-
-      return cachedData;
-    } else {
-      // 缓存为空，直接从 API 获取并缓存
-      try {
-        const freshData = await fetchFromApi<Record<string, PlayRecord>>(
-          `/api/playrecords`
-        );
-        cacheManager.cachePlayRecords(freshData);
-        return freshData;
-      } catch (err) {
-        console.error('获取播放记录失败:', err);
-        triggerGlobalError('获取播放记录失败');
-        return {};
+          })
+          .catch((err) => {
+            console.warn('首次获取播放记录失败:', err);
+          });
+      };
+      if (!hasScheduledInitialSync) {
+        hasScheduledInitialSync = true;
+        setTimeout(runSync, 3000);
+      } else {
+        runSync();
       }
+      return {};
     }
   }
 
