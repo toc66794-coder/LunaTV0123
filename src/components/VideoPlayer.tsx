@@ -456,16 +456,27 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       artInstanceRef.current = art;
 
-      (window as any).toggleAdBlock = onBlockAdToggle;
-      (window as any).startDownload = onStartDownload;
-      (window as any).openSettings = onOpenSettings;
+      (window as any).toggleAdBlock = () => {
+        onBlockAdToggle();
+        art.controls.show = true; // 重置隱藏計時器
+      };
+      (window as any).startDownload = () => {
+        onStartDownload();
+        art.controls.show = true;
+      };
+      (window as any).openSettings = () => {
+        onOpenSettings();
+        art.controls.show = true;
+      };
       (window as any).setPlaySpeed = (s: number) => {
         art.playbackRate = s;
+        art.controls.show = true;
       };
 
       // 將 setSaverEnabled 暴露給 window
       (window as any).toggleSaverMode = () => {
         setSaverEnabled((prev) => !prev);
+        art.controls.show = true;
       };
 
       const updateCustomControls = () => {
@@ -770,8 +781,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             } else if (side === 'right') {
               art.seek = Math.min(art.duration, art.currentTime + 10);
               art.notice.show = '⏩ 快進 10 秒';
-            } else {
-              art.fullscreen = !art.fullscreen;
             }
 
             lastTapTime = 0;
@@ -783,6 +792,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
             if (singleTapTimer) clearTimeout(singleTapTimer);
             singleTapTimer = setTimeout(() => {
+              // 如果 300ms 內沒點第二下，才執行顯示/隱藏控制列
               art.controls.show = !art.controls.show;
               singleTapTimer = null;
               lastTapTime = 0;
@@ -793,6 +803,19 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
         activeGestureMode = 'none';
       };
+
+      // 監聽自定義控制列的交互，防止自動縮回
+      const $customControls = $container.querySelector(
+        '#artplayer-custom-controls'
+      );
+      if ($customControls) {
+        const resetTimer = () => {
+          if (art.controls.show) art.controls.show = true;
+        };
+        ['touchstart', 'mousemove', 'mousedown'].forEach((ev) => {
+          $customControls.addEventListener(ev, resetTimer, { passive: true });
+        });
+      }
 
       // 使用 capture 選項確保我們先於 Artplayer 內部處理
       const eventOptions = { passive: false, capture: true };

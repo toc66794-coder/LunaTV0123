@@ -127,9 +127,6 @@ export class UpstashRedisStorage implements IStorage {
       }
     }
     const normalized = normalizePlayRecord(obj);
-    await withRetry(() =>
-      this.client.set(this.prKey(userName, key), normalized)
-    );
     return normalized;
   }
 
@@ -444,6 +441,14 @@ export class UpstashRedisStorage implements IStorage {
   async get(userName: string, key: string): Promise<any | null> {
     const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
     return withRetry(() => this.client.get(fullKey));
+  }
+
+  async mget(userName: string, keys: string[]): Promise<any[]> {
+    const fullKeys = keys.map((k) =>
+      userName === 'GLOBAL' ? k : `u:${userName}:g:${k}`
+    );
+    if (fullKeys.length === 0) return [];
+    return withRetry(() => this.client.mget(...fullKeys));
   }
 
   async set(

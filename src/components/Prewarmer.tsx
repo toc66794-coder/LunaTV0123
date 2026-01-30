@@ -58,8 +58,8 @@ export default function Prewarmer({ items, onCacheUpdate }: PrewarmerProps) {
     };
 
     /**
-     * 1. 監控輪詢 (Fast Loop)
-     * 目的：快速消耗 items 列表，同步本地狀態與伺服器快取
+     * 1. 監控輪詢 (Fast Loop) - 升級版：批量檢查
+     * 目的：一次性消耗 pendingItems 列表，大幅減少 API 請求次數
      */
     const startMonitor = async () => {
       const pendingItems = items.filter(
@@ -67,35 +67,49 @@ export default function Prewarmer({ items, onCacheUpdate }: PrewarmerProps) {
       );
 
       if (pendingItems.length === 0) {
-        monitorTimerRef.current = setTimeout(startMonitor, 2000); // 掃完了就休眠久一點
+        monitorTimerRef.current = setTimeout(startMonitor, 10000); // 全部檢查完畢，長休 10 秒
         return;
       }
 
-      const item = pendingItems[0];
-      const key = `${item.title}_${item.year || ''}`;
-      checkedRef.current.add(key);
+      console.log(
+        `[Prewarmer] 🕵️ Batch checking ${pendingItems.length} items...`
+      );
 
       try {
-        const checkRes = await fetch(
-          `/api/admin/cache?title=${encodeURIComponent(item.title)}&year=${
-            item.year || ''
-          }`
-        );
-        const checkData = await checkRes.json();
+        // 使用批量查模式
+        const res = await fetch('/api/admin/cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: pendingItems }),
+        });
 
-        if (checkData.hit) {
-          console.log(`[Prewarmer] ⚡ Hit: ${item.title}`);
-          if (onCacheUpdate) onCacheUpdate(key);
-        } else {
-          // 未命中，加入深度預熱隊列
-          console.log(`[Prewarmer] 🛒 Queueing for prewarm: ${item.title}`);
-          prewarmQueueRef.current.push(item);
+        const data = await res.json();
+
+        if (data.results) {
+          Object.entries(data.results).forEach(([key, hit]) => {
+            checkedRef.current.add(key);
+            if (hit) {
+              // console.log(`[Prewarmer] ⚡ Hit: ${key}`);
+              if (onCacheUpdate) onCacheUpdate(key);
+            } else {
+              // 找出對應的 item 加入預熱隊列
+              const [title, year] = key.split('_');
+              const item = pendingItems.find(
+                (it) => it.title === title && (it.year || '') === year
+              );
+              if (item) {
+                console.log(`[Prewarmer] 🛒 Queueing for prewarm: ${title}`);
+                prewarmQueueRef.current.push(item);
+              }
+            }
+          });
         }
       } catch (e) {
-        console.warn(`[Prewarmer] Monitor failed for ${item.title}`, e);
+        console.warn(`[Prewarmer] Batch monitor failed`, e);
       }
 
-      monitorTimerRef.current = setTimeout(startMonitor, 500);
+      // 批量處理後休眠較長時間，避免頻繁請求
+      monitorTimerRef.current = setTimeout(startMonitor, 30000);
     };
 
     /**

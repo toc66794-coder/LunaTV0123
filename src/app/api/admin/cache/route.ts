@@ -66,15 +66,19 @@ export async function POST(request: NextRequest) {
 
     // 模式 A: 批量查詢 (如果 body 包含 items 數組)
     if (Array.isArray(body.items)) {
-      const results: Record<string, boolean> = {};
-      const checkPromises = body.items.map(
-        async (item: { title: string; year?: string }) => {
-          const cacheKey = `cache:fast_source:${item.title}_${item.year || ''}`;
-          const data = await db.get('GLOBAL', cacheKey);
-          results[`${item.title}_${item.year || ''}`] = !!data;
-        }
+      const items = body.items as Array<{ title: string; year?: string }>;
+      const cacheKeys = items.map(
+        (item) => `cache:fast_source:${item.title}_${item.year || ''}`
       );
-      await Promise.all(checkPromises);
+
+      // 使用新實作的 mget 進行批量查詢
+      const values = await db.mget('GLOBAL', cacheKeys);
+
+      const results: Record<string, boolean> = {};
+      items.forEach((item, index) => {
+        results[`${item.title}_${item.year || ''}`] = !!values[index];
+      });
+
       return NextResponse.json({ results });
     }
 
@@ -90,11 +94,11 @@ export async function POST(request: NextRequest) {
       id,
       source_name,
       updateTime: Date.now(),
-      expireAt: Date.now() + 24 * 60 * 60 * 1000, // 24小時後過期
+      expireAt: Date.now() + 72 * 60 * 60 * 1000, // 72小時後過期
     };
 
-    // 寫入 Upstash Redis (TTL 為 24 小時)
-    await db.set('GLOBAL', cacheKey, payload, 24 * 60 * 60);
+    // 寫入 Upstash Redis (TTL 為 72 小時)
+    await db.set('GLOBAL', cacheKey, payload, 72 * 60 * 60);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -34,15 +34,26 @@ function normalizePlayRecord(input: any): PlayRecord {
   const o: any = typeof input === 'object' && input ? input : {};
   const r: PlayRecord = {
     title: typeof o.title === 'string' ? o.title : base.title,
-    source_name: typeof o.source_name === 'string' ? o.source_name : base.source_name,
+    source_name:
+      typeof o.source_name === 'string' ? o.source_name : base.source_name,
     cover: typeof o.cover === 'string' ? o.cover : base.cover,
     year: typeof o.year === 'string' ? o.year : base.year,
     index: typeof o.index === 'number' && o.index >= 1 ? o.index : base.index,
-    total_episodes: typeof o.total_episodes === 'number' && o.total_episodes >= 0 ? o.total_episodes : base.total_episodes,
-    play_time: typeof o.play_time === 'number' && o.play_time >= 0 ? o.play_time : base.play_time,
-    total_time: typeof o.total_time === 'number' && o.total_time >= 0 ? o.total_time : base.total_time,
+    total_episodes:
+      typeof o.total_episodes === 'number' && o.total_episodes >= 0
+        ? o.total_episodes
+        : base.total_episodes,
+    play_time:
+      typeof o.play_time === 'number' && o.play_time >= 0
+        ? o.play_time
+        : base.play_time,
+    total_time:
+      typeof o.total_time === 'number' && o.total_time >= 0
+        ? o.total_time
+        : base.total_time,
     save_time: typeof o.save_time === 'number' ? o.save_time : now,
-    search_title: typeof o.search_title === 'string' ? o.search_title : base.search_title,
+    search_title:
+      typeof o.search_title === 'string' ? o.search_title : base.search_title,
   };
   return r;
 }
@@ -204,7 +215,9 @@ export abstract class BaseRedisStorage implements IStorage {
     userName: string,
     key: string
   ): Promise<PlayRecord | null> {
-    const val = await this.withRetry(() => this.client.get(this.prKey(userName, key)));
+    const val = await this.withRetry(() =>
+      this.client.get(this.prKey(userName, key))
+    );
     if (!val) return null;
     let obj: any = null;
     try {
@@ -213,7 +226,6 @@ export abstract class BaseRedisStorage implements IStorage {
       obj = null;
     }
     const normalized = normalizePlayRecord(obj);
-    await this.withRetry(() => this.client.set(this.prKey(userName, key), JSON.stringify(normalized)));
     return normalized;
   }
 
@@ -540,6 +552,15 @@ export abstract class BaseRedisStorage implements IStorage {
     const fullKey = userName === 'GLOBAL' ? key : `u:${userName}:g:${key}`;
     const val = await this.withRetry(() => this.client.get(fullKey));
     return val ? JSON.parse(val) : null;
+  }
+
+  async mget(userName: string, keys: string[]): Promise<any[]> {
+    const fullKeys = keys.map((k) =>
+      userName === 'GLOBAL' ? k : `u:${userName}:g:${k}`
+    );
+    if (fullKeys.length === 0) return [];
+    const values = await this.withRetry(() => this.client.mGet(fullKeys));
+    return values.map((v) => (v ? JSON.parse(v as string) : null));
   }
 
   async set(

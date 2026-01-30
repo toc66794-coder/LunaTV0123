@@ -263,6 +263,13 @@ export class DbManager {
       await this.storage.delete(userName, key);
     }
   }
+
+  async mget(userName: string, keys: string[]): Promise<any[]> {
+    if (typeof this.storage.mget === 'function') {
+      return this.storage.mget(userName, keys);
+    }
+    return [];
+  }
 }
 
 // 导出默认实例
