@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
+import { processImageUrl } from '@/lib/utils';
 
 import { TVSettingsPanel } from '@/components/tv/TVSettingsPanel';
 import { TVVideoCard } from '@/components/tv/TVVideoCard';

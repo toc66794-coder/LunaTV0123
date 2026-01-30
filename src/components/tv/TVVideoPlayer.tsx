@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any, no-console, react-hooks/exhaustive-deps */
 'use client';
 
 import Artplayer from 'artplayer';
@@ -606,9 +606,10 @@ export function TVVideoPlayer({
   useEffect(() => {
     return () => {
       if (seekingInterval.current) clearInterval(seekingInterval.current);
-      if (speedIndicatorTimer.current)
-        clearTimeout(speedIndicatorTimer.current);
-      if (controlsTimer.current) clearTimeout(controlsTimer.current);
+      const currentSpeedIndicatorTimer = speedIndicatorTimer.current;
+      if (currentSpeedIndicatorTimer) clearTimeout(currentSpeedIndicatorTimer);
+      const currentControlsTimer = controlsTimer.current;
+      if (currentControlsTimer) clearTimeout(currentControlsTimer);
       if (skipCheckTimer.current) clearInterval(skipCheckTimer.current);
 
       const timers = longPressTimer.current;
