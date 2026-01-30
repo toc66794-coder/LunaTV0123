@@ -605,6 +605,8 @@ export default function TVHomePage() {
                 : ''
             }`}
             poster={selectedMovie.poster}
+            currentEpisode={selectedEpisodeIndex + 1}
+            totalEpisodes={videoDetail.episodes.length}
             onClose={() => setIsPlaying(false)}
             onNext={() => {
               if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
@@ -615,6 +617,9 @@ export default function TVHomePage() {
               if (selectedEpisodeIndex > 0) {
                 setSelectedEpisodeIndex(selectedEpisodeIndex - 1);
               }
+            }}
+            onEpisodeSelect={(episode) => {
+              setSelectedEpisodeIndex(episode - 1);
             }}
             onEnded={() => {
               if (selectedEpisodeIndex < videoDetail.episodes.length - 1) {
