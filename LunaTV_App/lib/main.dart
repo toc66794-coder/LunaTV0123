@@ -388,6 +388,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   String _noticeText = '';
   Timer? _noticeTimer;
 
+  // --- 進度拖動狀態 ---
+  bool _isDraggingHorizontal = false;
+  Duration _dragSeekTarget = Duration.zero;
+  Duration _dragSeekStart = Duration.zero;
+
   @override
   void initState() {
     super.initState();
@@ -486,6 +491,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             _videoPlayerController.setVolume(newVolume);
             _showNotice('🔊 音量: ${(newVolume * 100).round()}%');
           }
+        },
+        onHorizontalDragStart: (details) {
+          _dragSeekStart = _videoPlayerController.value.position;
+          _dragSeekTarget = _dragSeekStart;
+          setState(() => _isDraggingHorizontal = true);
+        },
+        onHorizontalDragUpdate: (details) {
+          final screenWidth = MediaQuery.of(context).size.width;
+          // 根據拖動位移計算秒數 (比例：全螢幕寬度對應 2 分鐘，或根據影片長度調整)
+          final double seekSeconds = (details.primaryDelta! / screenWidth) * 120; // 120秒
+          setState(() {
+            _dragSeekTarget += Duration(milliseconds: (seekSeconds * 1000).toInt());
+            if (_dragSeekTarget < Duration.zero) _dragSeekTarget = Duration.zero;
+            if (_dragSeekTarget > _videoPlayerController.value.duration) {
+              _dragSeekTarget = _videoPlayerController.value.duration;
+            }
+          });
+        },
+        onHorizontalDragEnd: (details) {
+          _videoPlayerController.seekTo(_dragSeekTarget);
+          setState(() => _isDraggingHorizontal = false);
+          _showNotice('⏩ 跳轉至 ${_formatDuration(_dragSeekTarget)}');
         },
         child: Stack(
           children: [
@@ -597,6 +624,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   child: Text(_noticeText, style: const TextStyle(color: Colors.white, fontSize: 16)),
                 ),
               ),
+
+            // 5. 水平拖動尋道提示
+            if (_isDraggingHorizontal)
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _dragSeekTarget > _dragSeekStart ? Icons.fast_forward : Icons.fast_rewind,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_formatDuration(_dragSeekTarget)} / ${_formatDuration(_videoPlayerController.value.duration)}',
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             
             // 返回按鈕
             if (_showControls)
@@ -612,5 +666,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ),
       ),
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
+    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
+    if (duration.inHours > 0) {
+      return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
+    }
+    return "$twoDigitMinutes:$twoDigitSeconds";
   }
 }
