@@ -496,6 +496,34 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         setSaverEnabled((prev) => !prev);
       };
 
+      // 更新時間函數 - 必須在 updateCustomControls 之前定義
+      const updateInfoTime = () => {
+        const $infoOverlay = art.layers['info-overlay'];
+        if (!$infoOverlay) return;
+
+        const $time = $infoOverlay.querySelector('#info-time');
+        if ($time) {
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          $time.textContent = timeStr;
+        }
+      };
+
+      // 更新標題函數 - 必須在 updateCustomControls 之前定義
+      const updateInfoTitle = () => {
+        const $infoOverlay = art.layers['info-overlay'];
+        if (!$infoOverlay) return;
+
+        const $title = $infoOverlay.querySelector('#info-title');
+        // 使用 Ref 確保獲取最新標題
+        if ($title && fullTitleRef.current) {
+          $title.textContent = fullTitleRef.current;
+        }
+      };
+
       const updateCustomControls = () => {
         if (!art || !art.template || !art.template.$container) return;
         const $controls = art.template.$container.querySelector(
@@ -599,34 +627,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       art.on('control', (state: boolean) => {
         updateOverlaysVisibility(state);
       });
-
-      // 更新時間函數
-      const updateInfoTime = () => {
-        const $infoOverlay = art.layers['info-overlay'];
-        if (!$infoOverlay) return;
-
-        const $time = $infoOverlay.querySelector('#info-time');
-        if ($time) {
-          const now = new Date();
-          const timeStr = now.toLocaleTimeString('en-GB', {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          $time.textContent = timeStr;
-        }
-      };
-
-      // 更新標題函數
-      const updateInfoTitle = () => {
-        const $infoOverlay = art.layers['info-overlay'];
-        if (!$infoOverlay) return;
-
-        const $title = $infoOverlay.querySelector('#info-title');
-        // 使用 Ref 確保獲取最新標題
-        if ($title && fullTitleRef.current) {
-          $title.textContent = fullTitleRef.current;
-        }
-      };
 
       // 初始化內容
       updateInfoTitle();
