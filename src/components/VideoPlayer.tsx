@@ -759,14 +759,16 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               10,
               Math.min(200, currentBrightness + change)
             );
-            if (artInstanceRef.current && artInstanceRef.current.video) {
-              artInstanceRef.current.video.style.filter = `brightness(${Math.round(
+            if (artInstanceRef.current) {
+              if (artInstanceRef.current.video) {
+                artInstanceRef.current.video.style.filter = `brightness(${Math.round(
+                  targetBrightness
+                )}%)`;
+              }
+              artInstanceRef.current.notice.show = `☀️ 亮度: ${Math.round(
                 targetBrightness
-              )}%)`;
+              )}%`;
             }
-            artInstanceRef.current?.notice.show = `☀️ 亮度: ${Math.round(
-              targetBrightness
-            )}%`;
           } else if (xPercent > 0.7) {
             // 右側：音量
             const volumeChange = yChange * 0.005;
@@ -774,11 +776,12 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               0,
               Math.min(1, (artInstanceRef.current?.volume || 0) + volumeChange)
             );
-            if (artInstanceRef.current)
+            if (artInstanceRef.current) {
               artInstanceRef.current.volume = newVolume;
-            artInstanceRef.current?.notice.show = `🔊 音量: ${Math.round(
-              newVolume * 100
-            )}%`;
+              artInstanceRef.current.notice.show = `🔊 音量: ${Math.round(
+                newVolume * 100
+              )}%`;
+            }
           }
 
           // 平滑增量
