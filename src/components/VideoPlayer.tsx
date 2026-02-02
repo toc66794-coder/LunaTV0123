@@ -658,6 +658,13 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         // 忽略非主按鍵 (例如滑鼠右鍵)
         if (e.isPrimary === false || e.button !== 0) return;
 
+        // 如果正在等待雙擊（singleClickTimer 存在），立即阻止事件傳播
+        // 這樣可以防止 ArtPlayer 處理第二次點擊並顯示控制列
+        if (singleClickTimer) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+
         isPointerDown = true;
         $container.setPointerCapture(e.pointerId);
 
@@ -690,12 +697,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             if (navigator.vibrate) navigator.vibrate(50);
           }
         }, 500);
-
-        // 阻止 ArtPlayer 預設行為 (例如點擊暫停/顯示控制欄)
-        // 這樣我們可以完全接管單擊/雙擊邏輯
-        // 注意：這可能會阻止某些原生行為，需小心驗證
-        // e.stopPropagation();
-        // e.preventDefault(); // 防止 Mouse 事件 (如果是 Touch 觸發)
 
         // 為了穩健性，我們使用 capture: true 在 addEventListener
       };
@@ -841,8 +842,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         const xPercent = x / rect.width;
         const now = Date.now();
 
-        // 判斷是否為短時間的點擊
-        if (now - startTime < 300) {
+        // 判斷是否為短時間的點擊（250ms 內視為有效點擊）
+        if (now - startTime < 250) {
           // 如果已經有單擊計時器，說明這是第二次點擊 -> 觸發雙擊
           if (singleClickTimer) {
             clearTimeout(singleClickTimer);
@@ -885,7 +886,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               if (art && art.controls) {
                 art.controls.show = !art.controls.show;
               }
-            }, 300); // 300ms 延遲等待雙擊
+            }, 250); // 250ms 延遲等待雙擊，更快的單擊反應
           }
         }
 
