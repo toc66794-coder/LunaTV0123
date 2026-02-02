@@ -849,6 +849,10 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             singleClickTimer = null;
 
             // --- 雙擊邏輯 ---
+            // 阻止事件傳播，避免觸發控制列顯示
+            e.stopPropagation();
+            e.preventDefault();
+
             if (xPercent < 0.33) {
               // 左側: 快退 10s
               art.seek = Math.max(0, art.currentTime - 10);
@@ -859,9 +863,13 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               art.notice.show = '⏩ 快進 10 秒';
             } else {
               // 中間: 暫停/播放
-              art.toggle();
+              if (art.playing) {
+                art.pause();
+              } else {
+                art.play();
+              }
             }
-            // 注意：不調用 art.controls.show，保持不變
+            // 雙擊後不顯示控制列
           } else {
             // 這是第一次點擊，啟動延時
             singleClickTimer = setTimeout(() => {
