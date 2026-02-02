@@ -538,7 +538,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           '#download-btn-container'
         );
         if (downloadContainer) {
-          const task = downloadTasksRef.current[option.url];
+          const task = downloadTasksRef.current?.[option.url];
           const isDownloading = task?.status === 'downloading';
           const isCompleted = task?.status === 'completed';
 
@@ -682,7 +682,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if (longPressTimer) clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
-          if (activeGestureMode === 'none') {
+          if (activeGestureMode === 'none' && art && !art.isDestroy) {
             activeGestureMode = 'longpress';
             speedBeforeLongPress = art.playbackRate;
             art.playbackRate = 3;
@@ -874,7 +874,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               // 用戶需求: "單即啟動控制列" (Single click activates control bar).
               // 我使用 toggle。
               // 並且觸發 Info Overlay 顯示 (上面的 updateOverlaysVisibility 已綁定 control 事件)
-              art.controls.show = !art.controls.show;
+              if (art && art.controls) {
+                art.controls.show = !art.controls.show;
+              }
             }, 300); // 300ms 延遲等待雙擊
           }
         }
