@@ -925,39 +925,65 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // 如果 target 是控制欄按鈕或其他交互元件，我們應該放行。
       // 如果 target 是 video 元素或遮罩層(subtitle/mask)，則攔截。
 
+      const isUiElement = (target: HTMLElement) => {
+        return (
+          target.closest('.art-controls') ||
+          target.closest('.art-contextmenu') ||
+          target.closest('.art-settings') ||
+          target.closest('#artplayer-custom-controls') ||
+          target.closest('#luna-saver-overlay')
+        );
+      };
+
       const safeHandlePointerDown = (e: any) => {
-        const target = e.target as HTMLElement;
-        if (target.closest('.art-controls') || target.closest('.art-layer')) {
-          return;
-        }
+        if (isUiElement(e.target)) return;
         e.stopImmediatePropagation();
         e.preventDefault();
         handlePointerDown(e);
       };
 
       const safeHandlePointerMove = (e: any) => {
-        const target = e.target as HTMLElement;
-        if (target.closest('.art-controls') || target.closest('.art-layer')) {
-          return;
-        }
-        // Seeking/Adjusting 時也攔截
+        if (isUiElement(e.target)) return;
         if (activeGestureMode !== 'none') {
           e.stopImmediatePropagation();
+          e.preventDefault();
         }
         handlePointerMove(e);
       };
 
       const safeHandlePointerUp = (e: any) => {
-        const target = e.target as HTMLElement;
-        if (target.closest('.art-controls') || target.closest('.art-layer')) {
-          return;
-        }
+        if (isUiElement(e.target)) return;
         e.stopImmediatePropagation();
         e.preventDefault();
         handlePointerUp(e);
       };
 
+      // 額外攔截 click, dblclick, touch 等事件，防止 ArtPlayer 原生響應
+      const safeBlockCapture = (e: any) => {
+        if (isUiElement(e.target)) return;
+        e.stopImmediatePropagation();
+        // 對於 click，我們必須阻斷，因為我們的手勢邏輯在 pointerup 已處理
+        if (
+          e.type === 'click' ||
+          e.type === 'dblclick' ||
+          e.type.startsWith('touch')
+        ) {
+          e.preventDefault();
+        }
+      };
+
       const eventOptions = { passive: false, capture: true };
+      const blockEvents = [
+        'click',
+        'dblclick',
+        'touchstart',
+        'touchend',
+        'touchmove',
+        'mousedown',
+        'mouseup',
+        'mousemove',
+      ];
+
       $container.addEventListener(
         'pointerdown',
         safeHandlePointerDown,
@@ -973,6 +999,11 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         safeHandlePointerUp,
         eventOptions
       );
+
+      blockEvents.forEach((evt) => {
+        $container.addEventListener(evt, safeBlockCapture, eventOptions);
+      });
+
       // 禁止右鍵選單
       $container.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -996,6 +1027,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           safeHandlePointerUp,
           eventOptions
         );
+        blockEvents.forEach((evt) => {
+          $container.removeEventListener(evt, safeBlockCapture, eventOptions);
+        });
         $container.removeEventListener('contextmenu', (e) =>
           e.preventDefault()
         );
