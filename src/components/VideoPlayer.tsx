@@ -282,51 +282,39 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               }
             }
 
-            if (video.hls) {
-              video.hls.destroy();
+            if (Hls.isSupported()) {
+              if (video.hls) {
+                video.hls.destroy();
+              }
+
+              const hls = new Hls({
+                debug: false,
+                enableWorker: true,
+                lowLatencyMode: true,
+                maxBufferLength: 30,
+                backBufferLength: 30,
+                maxBufferSize: 60 * 1000 * 1000,
+                loader: blockAdEnabledRef.current
+                  ? CustomHlsJsLoader
+                  : Hls.DefaultConfig.loader,
+              });
+
+              hls.loadSource(url);
+              hls.attachMedia(video);
+              video.hls = hls;
+            } else if (
+              video.canPlayType('application/vnd.apple.mpegurl') ||
+              video.canPlayType('audio/mpegurl')
+            ) {
+              // iOS 設備原生支援 HLS (m3u8)
+              // 注意：原生播放無法使用自定義 Loader 進行廣告過濾
+              video.src = url;
             }
 
-            const hls = new Hls({
-              debug: false,
-              enableWorker: true,
-              lowLatencyMode: true,
-              maxBufferLength: 30,
-              backBufferLength: 30,
-              maxBufferSize: 60 * 1000 * 1000,
-              loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
-                : Hls.DefaultConfig.loader,
-            });
-
-            hls.loadSource(url);
-            hls.attachMedia(video);
-            video.hls = hls;
-
-            if (!video.querySelector('source')) {
-              const source = document.createElement('source');
-              source.src = url;
-              video.appendChild(source);
-            }
             video.disableRemotePlayback = false;
             if (video.hasAttribute('disableRemotePlayback')) {
               video.removeAttribute('disableRemotePlayback');
             }
-
-            hls.on(Hls.Events.ERROR, (event: any, data: any) => {
-              if (data.fatal) {
-                switch (data.type) {
-                  case Hls.ErrorTypes.NETWORK_ERROR:
-                    hls.startLoad();
-                    break;
-                  case Hls.ErrorTypes.MEDIA_ERROR:
-                    hls.recoverMediaError();
-                    break;
-                  default:
-                    hls.destroy();
-                    break;
-                }
-              }
-            });
           },
         },
         settings: [

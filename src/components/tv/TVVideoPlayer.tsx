@@ -570,10 +570,17 @@ export function TVVideoPlayer({
             }
           }
 
-          const hls = new (Hls as any)({ loader: CustomHlsJsLoader });
-          hls.loadSource(u);
-          hls.attachMedia(video);
-          (video as any).hls = hls;
+          if (Hls.isSupported()) {
+            const hls = new (Hls as any)({ loader: CustomHlsJsLoader });
+            hls.loadSource(u);
+            hls.attachMedia(video);
+            (video as any).hls = hls;
+          } else if (
+            video.canPlayType('application/vnd.apple.mpegurl') ||
+            video.canPlayType('audio/mpegurl')
+          ) {
+            video.src = u;
+          }
         },
       },
     });
