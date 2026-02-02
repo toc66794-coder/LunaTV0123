@@ -30,6 +30,10 @@ dependencies:
   # Fonts
   google_fonts: ^6.1.0
 
+  # Local Server (Selective Ad-Blocking)
+  shelf: ^1.4.1
+  shelf_router: ^1.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

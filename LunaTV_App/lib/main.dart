@@ -5,9 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'dart:io';
-import 'package:shelf/shelf.dart';
-import 'package:shelf/shelf_io.dart' as io;
-import 'package:shelf_router/shelf_router.dart';
+import 'package:shelf/shelf.dart' as shelf;
+import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:shelf_router/shelf_router.dart' as shelf_router;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -21,16 +21,16 @@ class AppConfig {
 // --- 本地代理伺服器 (解決去廣告與盜連問題) ---
 class LocalProxy {
   static Future<int> start() async {
-    final router = Router();
+    final router = shelf_router.Router();
 
-    router.get('/m3u8', (Request request) async {
+    router.get('/m3u8', (shelf.Request request) async {
       final url = request.url.queryParameters['url'];
-      if (url == null) return Response.notFound('Missing url');
+      if (url == null) return shelf.Response.notFound('Missing url');
 
       try {
         final response = await http.get(Uri.parse(url));
         if (response.statusCode != 200) {
-          return Response(response.statusCode, body: response.body);
+          return shelf.Response(response.statusCode, body: response.body);
         }
 
         // 過濾廣告
@@ -40,17 +40,17 @@ class LocalProxy {
             .toList();
         content = filteredLines.join('\n');
 
-        return Response.ok(content, headers: {
+        return shelf.Response.ok(content, headers: {
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
         });
       } catch (e) {
-        return Response.internalServerError(body: e.toString());
+        return shelf.Response.internalServerError(body: e.toString());
       }
     });
 
     // 啟動於隨機可用連接埠
-    final server = await io.serve(router, InternetAddress.loopbackIPv4, 0);
+    final server = await shelf_io.serve(router, InternetAddress.loopbackIPv4, 0);
     AppConfig.proxyPort = server.port;
     debugPrint('本地代理啟動於: http://localhost:${server.port}');
     return server.port;
@@ -120,7 +120,7 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       debugPrint('Fetch Error: $e');
       setState(() {
-        _error = '連線失敗，請檢查 $ {AppConfig.baseUrl} 是否正確且 Server 已啟動\n$e';
+        _error = '連線失敗，請檢查 ${AppConfig.baseUrl} 是否正確且 Server 已啟動\n$e';
         _isLoading = false;
       });
     }
@@ -281,7 +281,7 @@ class _DetailPageState extends State<DetailPage> {
       debugPrint('正在搜尋：$title');
       
       // 1. 搜尋源
-      final searchUrl = '${AppConfig.baseUrl}/api/search?q=$ {Uri.encodeComponent(title)}';
+      final searchUrl = '${AppConfig.baseUrl}/api/search?q=${Uri.encodeComponent(title)}';
       final searchRes = await _dio.get(searchUrl);
       
       final List results = searchRes.data['results'] ?? [];
@@ -312,7 +312,7 @@ class _DetailPageState extends State<DetailPage> {
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('播放失敗: $ {e.toString()}')),
+        SnackBar(content: Text('播放失敗: ${e.toString()}')),
       );
     } finally {
       if (mounted) setState(() => _isSearching = false);
@@ -342,7 +342,7 @@ class _DetailPageState extends State<DetailPage> {
                 children: [
                   Text(item['title'] ?? '', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
-                  Text('豆瓣評分: $ {item['rate'] ?? "N/A"}', style: const TextStyle(color: Colors.amber)),
+                  Text('豆瓣評分: ${item['rate'] ?? "N/A"}', style: const TextStyle(color: Colors.amber)),
                   const SizedBox(height: 30),
                   SizedBox(
                     width: double.infinity,
