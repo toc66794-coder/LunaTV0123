@@ -635,6 +635,22 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       let longPressTimer: NodeJS.Timeout | null = null;
       let singleClickTimer: NodeJS.Timeout | null = null; // 單擊延遲計時器
 
+      let dragSeekTarget = 0;
+
+      const formatTime = (seconds: number) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        if (h > 0) {
+          return `${h}:${m.toString().padStart(2, '0')}:${s
+            .toString()
+            .padStart(2, '0')}`;
+        }
+        return `${m.toString().padStart(2, '0')}:${s
+          .toString()
+          .padStart(2, '0')}`;
+      };
+
       let speedBeforeLongPress = 1;
       // let lastTapSide: 'left' | 'right' | null = null; // 不再依賴 Side 歷史判定，改用 Time gap
       let currentBrightness = 100; // 內部維護精確亮度值
@@ -729,9 +745,22 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }
 
         if (activeGestureMode === 'seeking') {
-          return; // 暫未實作自定義 seeking，或者依賴 ArtPlayer 原生?
-          // 原代碼沒實作 seeking 邏輯僅標記狀態?
-          // 若要保留原 behavior，這裡應該什麼都不做
+          if (e.cancelable) e.preventDefault();
+          const art = artInstanceRef.current;
+          if (!art) return;
+
+          const deltaXRaw = currentX - startX;
+          // Scale: 全螢幕寬度對應 120 秒進度
+          const seekOffset = (deltaXRaw / rect.width) * 120;
+          dragSeekTarget = Math.max(
+            0,
+            Math.min(art.duration, art.currentTime + seekOffset)
+          );
+
+          art.notice.show = `${seekOffset > 0 ? '⏩' : '⏪'} ${formatTime(
+            dragSeekTarget
+          )} / ${formatTime(art.duration)}`;
+          return;
         }
 
         if (activeGestureMode === 'adjusting') {
@@ -794,7 +823,9 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           deltaX > minMoveThreshold
         ) {
           activeGestureMode = 'seeking';
-          // 原有代碼似乎沒實作 Seeking 拖曳邏輯，僅標記。若需要可補上。
+          if (artInstanceRef.current) {
+            dragSeekTarget = artInstanceRef.current.currentTime;
+          }
           return;
         }
 
@@ -829,10 +860,17 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }
 
         // 結束調整
-        if (
-          activeGestureMode === 'seeking' ||
-          activeGestureMode === 'adjusting'
-        ) {
+        if (activeGestureMode === 'seeking') {
+          const art = artInstanceRef.current;
+          if (art) {
+            art.seek = dragSeekTarget;
+            art.notice.show = `跳轉至: ${formatTime(dragSeekTarget)}`;
+          }
+          activeGestureMode = 'none';
+          return;
+        }
+
+        if (activeGestureMode === 'adjusting') {
           activeGestureMode = 'none';
           return;
         }
