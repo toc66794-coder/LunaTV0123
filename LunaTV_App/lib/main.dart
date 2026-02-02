@@ -14,7 +14,8 @@ import 'dart:async';
 
 // --- 配置中心 ---
 class AppConfig {
-  static String baseUrl = 'http://10.0.2.2:3000'; 
+  // 請修改為您的 Vercel 部署網址，例如 https://lunatv0123.vercel.app
+  static String baseUrl = 'https://lunatv0123.vercel.app'; 
   static int proxyPort = 0; 
 }
 
@@ -59,7 +60,12 @@ class LocalProxy {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await LocalProxy.start();
+  try {
+    // 嘗試啟動代理，若失敗仍進入主程式
+    await LocalProxy.start().timeout(const Duration(seconds: 3));
+  } catch (e) {
+    debugPrint('LocalProxy Start Failed: $e');
+  }
   runApp(const LunaTVApp());
 }
 
