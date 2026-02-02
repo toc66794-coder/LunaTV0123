@@ -4,15 +4,60 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'dart:io';
+import 'package:shelf/shelf.dart';
+import 'package:shelf/shelf_io.dart' as io;
+import 'package:shelf_router/shelf_router.dart';
+import 'package:http/http.dart' as http;
 
 // --- 配置中心 ---
 class AppConfig {
-  // 對於手機實體裝置測試，請改為您電腦的區域 IP (例如 192.168.1.10)
-  // 模擬器則可以使用 10.0.2.2 或 localhost
   static String baseUrl = 'http://10.0.2.2:3000'; 
+  static int proxyPort = 0; 
 }
 
-void main() {
+// --- 本地代理伺服器 (解決去廣告與盜連問題) ---
+class LocalProxy {
+  static Future<int> start() async {
+    final router = Router();
+
+    router.get('/m3u8', (Request request) async {
+      final url = request.url.queryParameters['url'];
+      if (url == null) return Response.notFound('Missing url');
+
+      try {
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode != 200) {
+          return Response(response.statusCode, body: response.body);
+        }
+
+        // 過濾廣告
+        String content = response.body;
+        final filteredLines = content.split('\n')
+            .where((line) => !line.contains('#EXT-X-DISCONTINUITY'))
+            .toList();
+        content = filteredLines.join('\n');
+
+        return Response.ok(content, headers: {
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+        });
+      } catch (e) {
+        return Response.internalServerError(body: e.toString());
+      }
+    });
+
+    // 啟動於隨機可用連接埠
+    final server = await io.serve(router, InternetAddress.loopbackIPv4, 0);
+    AppConfig.proxyPort = server.port;
+    debugPrint('本地代理啟動於: http://localhost:${server.port}');
+    return server.port;
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await LocalProxy.start();
   runApp(const LunaTVApp());
 }
 
@@ -340,7 +385,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Future<void> _initializePlayer() async {
-    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    String videoUrl = widget.url;
+    
+    // 如果是 m3u8，則使用本地代理進行去廣告過濾
+    if (videoUrl.contains('.m3u8')) {
+      videoUrl = 'http://localhost:${AppConfig.proxyPort}/m3u8?url=${Uri.encodeComponent(videoUrl)}';
+      debugPrint('使用代理播放: $videoUrl');
+    }
+
+    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
     await _videoPlayerController.initialize();
 
     _chewieController = ChewieController(
