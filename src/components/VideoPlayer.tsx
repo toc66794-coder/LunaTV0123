@@ -249,6 +249,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
             url: option.url,
           }),
         ],
+        clickToPause: false,
         customType: {
           m3u8: async function (video: HTMLVideoElement, url: string) {
             const { default: Hls } = await import('hls.js');
@@ -650,23 +651,19 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // let lastTapSide: 'left' | 'right' | null = null; // 不再依賴 Side 歷史判定，改用 Time gap
       let currentBrightness = 100; // 內部維護精確亮度值
       let isPointerDown = false;
+      let lastTapTime = 0;
+      let lastTapSide: 'left' | 'right' | 'middle' | null = null;
 
-      const $container = art.template.$container;
+      const $container = artRef.current;
       if (!$container) return;
 
       const handlePointerDown = (e: PointerEvent) => {
         // 忽略非主按鍵 (例如滑鼠右鍵)
         if (e.isPrimary === false || e.button !== 0) return;
 
-        // 如果正在等待雙擊（singleClickTimer 存在），立即阻止事件傳播
-        // 這樣可以防止 ArtPlayer 處理第二次點擊並顯示控制列
-        if (singleClickTimer) {
-          e.stopPropagation();
-          e.preventDefault();
-        }
-
         isPointerDown = true;
-        $container.setPointerCapture(e.pointerId);
+        // 使用 setPointerCapture 確保移動與放開事件都能由 container 接收
+        ($container as any).setPointerCapture(e.pointerId);
 
         const rect = $container.getBoundingClientRect();
         startX = e.clientX - rect.left;
@@ -675,8 +672,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         activeGestureMode = 'none';
 
         // 初始化亮度值
-        if (art.video) {
-          const styleFilter = art.video.style.filter;
+        if (artInstanceRef.current && artInstanceRef.current.video) {
+          const styleFilter = artInstanceRef.current.video.style.filter;
           const match = styleFilter.match(/brightness\((\d+)%\)/);
           if (match) {
             currentBrightness = parseInt(match[1], 10);
@@ -689,11 +686,15 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         if (longPressTimer) clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
-          if (activeGestureMode === 'none' && art && !art.isDestroy) {
+          if (
+            activeGestureMode === 'none' &&
+            artInstanceRef.current &&
+            !artInstanceRef.current.isDestroy
+          ) {
             activeGestureMode = 'longpress';
-            speedBeforeLongPress = art.playbackRate;
-            art.playbackRate = 3;
-            art.notice.show = '🚀 3x 速播放中';
+            speedBeforeLongPress = artInstanceRef.current.playbackRate;
+            artInstanceRef.current.playbackRate = 3;
+            artInstanceRef.current.notice.show = '🚀 3x 速播放中';
             if (navigator.vibrate) navigator.vibrate(50);
           }
         }, 500);
@@ -730,6 +731,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           // 取消單擊等待，因為用戶在拖曳
           clearTimeout(singleClickTimer);
           singleClickTimer = null;
+          lastTapTime = 0; // Reset tap state
+          lastTapSide = null;
         }
 
         const minMoveThreshold = 10;
@@ -756,21 +759,26 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
               10,
               Math.min(200, currentBrightness + change)
             );
-            if (art.video) {
-              art.video.style.filter = `brightness(${Math.round(
+            if (artInstanceRef.current && artInstanceRef.current.video) {
+              artInstanceRef.current.video.style.filter = `brightness(${Math.round(
                 targetBrightness
               )}%)`;
             }
-            art.notice.show = `☀️ 亮度: ${Math.round(targetBrightness)}%`;
+            artInstanceRef.current?.notice.show = `☀️ 亮度: ${Math.round(
+              targetBrightness
+            )}%`;
           } else if (xPercent > 0.7) {
             // 右側：音量
             const volumeChange = yChange * 0.005;
             const newVolume = Math.max(
               0,
-              Math.min(1, art.volume + volumeChange)
+              Math.min(1, (artInstanceRef.current?.volume || 0) + volumeChange)
             );
-            art.volume = newVolume;
-            art.notice.show = `🔊 音量: ${Math.round(newVolume * 100)}%`;
+            if (artInstanceRef.current)
+              artInstanceRef.current.volume = newVolume;
+            artInstanceRef.current?.notice.show = `🔊 音量: ${Math.round(
+              newVolume * 100
+            )}%`;
           }
 
           // 平滑增量
@@ -803,8 +811,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
           activeGestureMode = 'adjusting';
           if (e.cancelable) e.preventDefault();
           // 初始化亮度
-          if (art.video) {
-            const styleFilter = art.video.style.filter;
+          if (artInstanceRef.current && artInstanceRef.current.video) {
+            const styleFilter = artInstanceRef.current.video.style.filter;
             const match = styleFilter.match(/brightness\((\d+)%\)/);
             currentBrightness = match ? parseInt(match[1], 10) : 100;
           }
@@ -815,14 +823,16 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       const handlePointerUp = (e: PointerEvent) => {
         if (!isPointerDown) return;
         isPointerDown = false;
-        $container.releasePointerCapture(e.pointerId);
+        ($container as any).releasePointerCapture(e.pointerId);
 
         if (longPressTimer) clearTimeout(longPressTimer);
 
         // 結束長按
         if (activeGestureMode === 'longpress') {
-          art.playbackRate = speedBeforeLongPress;
-          art.notice.show = '';
+          if (artInstanceRef.current) {
+            artInstanceRef.current.playbackRate = speedBeforeLongPress;
+            artInstanceRef.current.notice.show = '';
+          }
           activeGestureMode = 'none';
           return;
         }
@@ -842,51 +852,53 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         const xPercent = x / rect.width;
         const now = Date.now();
 
-        // 判斷是否為短時間的點擊（250ms 內視為有效點擊）
-        if (now - startTime < 250) {
-          // 如果已經有單擊計時器，說明這是第二次點擊 -> 觸發雙擊
-          if (singleClickTimer) {
-            clearTimeout(singleClickTimer);
-            singleClickTimer = null;
+        // 判斷是否為短時間的點擊
+        if (now - startTime < 300) {
+          // 判定側邊
+          let side: 'left' | 'right' | 'middle' = 'middle';
+          if (xPercent < 0.33) side = 'left';
+          else if (xPercent > 0.66) side = 'right';
+
+          const art = artInstanceRef.current;
+          if (!art) return;
+
+          // 判斷是否為雙擊 (300ms 內，且同一側)
+          if (now - lastTapTime < 300 && lastTapSide === side) {
+            if (singleClickTimer) {
+              clearTimeout(singleClickTimer);
+              singleClickTimer = null;
+            }
 
             // --- 雙擊邏輯 ---
-            // 阻止事件傳播，避免觸發控制列顯示
-            e.stopPropagation();
-            e.preventDefault();
-
-            if (xPercent < 0.33) {
-              // 左側: 快退 10s
+            if (side === 'left') {
               art.seek = Math.max(0, art.currentTime - 10);
               art.notice.show = '⏪ 後退 10 秒';
-            } else if (xPercent > 0.66) {
-              // 右側: 快進 10s
+            } else if (side === 'right') {
               art.seek = Math.min(art.duration, art.currentTime + 10);
               art.notice.show = '⏩ 快進 10 秒';
             } else {
-              // 中間: 暫停/播放
-              if (art.playing) {
-                art.pause();
-              } else {
-                art.play();
-              }
+              if (art.playing) art.pause();
+              else art.play();
             }
-            // 雙擊後不顯示控制列
+
+            lastTapTime = 0;
+            lastTapSide = null;
           } else {
-            // 這是第一次點擊，啟動延時
+            // 這是第一次點擊
+            lastTapTime = now;
+            lastTapSide = side;
+
+            if (singleClickTimer) clearTimeout(singleClickTimer);
             singleClickTimer = setTimeout(() => {
               singleClickTimer = null;
-              // --- 單擊邏輯 ---
-              // 顯示/隱藏 控制列 (並非 toggle，而是確保顯示? 或者 toggle? 用戶說: "單即啟動控制列")
-              // 通常 toggle 比較自然
-              // 如果是 "啟動"，那可能是 art.controls.show = true
-              // 但為了 UX，toggle 比較合理。如果當前已顯示，再點一下應該隱藏?
-              // 用戶需求: "單即啟動控制列" (Single click activates control bar).
-              // 我使用 toggle。
-              // 並且觸發 Info Overlay 顯示 (上面的 updateOverlaysVisibility 已綁定 control 事件)
+              lastTapTime = 0;
+              lastTapSide = null;
+
+              // 單擊：切換控制列顯示
               if (art && art.controls) {
                 art.controls.show = !art.controls.show;
               }
-            }, 250); // 250ms 延遲等待雙擊，更快的單擊反應
+            }, 300);
           }
         }
 
@@ -895,8 +907,6 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
 
       // 使用 Pointer Events 取代 Touch Events 以支援滑鼠與觸控
       // capture: true 確保我們先處理
-      const eventOptions = { passive: false, capture: true };
-
       // 為了完全阻止 ArtPlayer 的預設 Click/Touch 行為，我們需要在 capture 階段 stopPropagation
       // 但這樣會導致 ArtPlayer 收不到任何交互?
       // 解決方案：我們自己實作了常用的交互 (播放/暫停/進度/音量/控制欄)，所以攔截是可以的。
@@ -912,32 +922,29 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // 如果 target 是控制欄按鈕或其他交互元件，我們應該放行。
       // 如果 target 是 video 元素或遮罩層(subtitle/mask)，則攔截。
 
-      const safeHandlePointerDown = (e: PointerEvent) => {
-        // 檢查是否點擊了控制欄與插件
+      const safeHandlePointerDown = (e: any) => {
         const target = e.target as HTMLElement;
-        // ArtPlayer 的控制欄通常有 art-controls 類別，或者在 art-bottom 內
         if (target.closest('.art-controls') || target.closest('.art-layer')) {
-          // 點擊了控制列或圖層按鈕，不攔截，不處理我們的手勢
           return;
         }
-
-        // 執行我們的手勢邏輯
-        // 使用 stopImmediatePropagation 完全阻止 ArtPlayer 處理該點擊
         e.stopImmediatePropagation();
         e.preventDefault();
         handlePointerDown(e);
       };
 
-      const safeHandlePointerMove = (e: PointerEvent) => {
+      const safeHandlePointerMove = (e: any) => {
         const target = e.target as HTMLElement;
         if (target.closest('.art-controls') || target.closest('.art-layer')) {
           return;
         }
-        e.stopImmediatePropagation();
+        // Seeking/Adjusting 時也攔截
+        if (activeGestureMode !== 'none') {
+          e.stopImmediatePropagation();
+        }
         handlePointerMove(e);
       };
 
-      const safeHandlePointerUp = (e: PointerEvent) => {
+      const safeHandlePointerUp = (e: any) => {
         const target = e.target as HTMLElement;
         if (target.closest('.art-controls') || target.closest('.art-layer')) {
           return;
@@ -947,6 +954,7 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         handlePointerUp(e);
       };
 
+      const eventOptions = { passive: false, capture: true };
       $container.addEventListener(
         'pointerdown',
         safeHandlePointerDown,
@@ -965,6 +973,8 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       // 禁止右鍵選單
       $container.addEventListener('contextmenu', (e) => e.preventDefault());
 
+      // The Artplayer initialization was moved up.
+
       if (getInstance) getInstance(art);
 
       return () => {
@@ -975,12 +985,12 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         );
         $container.removeEventListener(
           'pointermove',
-          handlePointerMove,
+          safeHandlePointerMove,
           eventOptions
         );
         $container.removeEventListener(
           'pointerup',
-          handlePointerUp,
+          safeHandlePointerUp,
           eventOptions
         );
         $container.removeEventListener('contextmenu', (e) =>
