@@ -9,6 +9,8 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'dart:async';
 
 // --- 配置中心 ---
 class AppConfig {
@@ -377,20 +379,48 @@ class VideoPlayerPage extends StatefulWidget {
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
   late VideoPlayerController _videoPlayerController;
   ChewieController? _chewieController;
+  
+  // --- 狀態控制 ---
+  bool _showControls = true;
+  Timer? _hideTimer;
+  bool _isLongPressing = false;
+  double _lastSpeed = 1.0;
+  String _noticeText = '';
+  Timer? _noticeTimer;
 
   @override
   void initState() {
     super.initState();
     _initializePlayer();
+    _startHideTimer();
+  }
+
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showControls = false);
+    });
+  }
+
+  void _toggleControls() {
+    setState(() {
+      _showControls = !_showControls;
+      if (_showControls) _startHideTimer();
+    });
+  }
+
+  void _showNotice(String text) {
+    _noticeTimer?.cancel();
+    setState(() => _noticeText = text);
+    _noticeTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _noticeText = '');
+    });
   }
 
   Future<void> _initializePlayer() async {
     String videoUrl = widget.url;
-    
-    // 如果是 m3u8，則使用本地代理進行去廣告過濾
     if (videoUrl.contains('.m3u8')) {
       videoUrl = 'http://localhost:${AppConfig.proxyPort}/m3u8?url=${Uri.encodeComponent(videoUrl)}';
-      debugPrint('使用代理播放: $videoUrl');
     }
 
     _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
@@ -400,18 +430,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       videoPlayerController: _videoPlayerController,
       autoPlay: true,
       looping: false,
+      showControls: false, // 我們使用自定義疊層
       aspectRatio: _videoPlayerController.value.aspectRatio,
-      optionsTranslation: OptionsTranslation(
-        playbackSpeedButtonText: '速度',
-        subtitlesButtonText: '字幕',
-        cancelButtonText: '取消',
-      ),
     );
     setState(() {});
   }
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
+    _noticeTimer?.cancel();
     _videoPlayerController.dispose();
     _chewieController?.dispose();
     super.dispose();
@@ -419,20 +447,169 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final String currentTime = DateFormat('HH:mm').format(DateTime.now());
+
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
       backgroundColor: Colors.black,
-      body: Center(
-        child: _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
-            ? Chewie(controller: _chewieController!)
-            : const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 20),
-                  Text('正在緩衝 HLS 串流...'),
-                ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _toggleControls,
+        onDoubleTap: () {
+          if (_videoPlayerController.value.isPlaying) {
+            _videoPlayerController.pause();
+            _showNotice('⏸ 暫停');
+          } else {
+            _videoPlayerController.play();
+            _showNotice('▶️ 播放');
+          }
+        },
+        onLongPressStart: (_) {
+          _lastSpeed = _videoPlayerController.value.playbackSpeed;
+          _videoPlayerController.setPlaybackSpeed(3.0);
+          setState(() => _isLongPressing = true);
+          _showNotice('🚀 3x 速播放中');
+        },
+        onLongPressEnd: (_) {
+          _videoPlayerController.setPlaybackSpeed(_lastSpeed);
+          setState(() => _isLongPressing = false);
+          _showNotice('恢復速度: ${_lastSpeed}x');
+        },
+        onVerticalDragUpdate: (details) {
+          final screenWidth = MediaQuery.of(context).size.width;
+          if (details.globalPosition.dx < screenWidth / 2) {
+            // 左側：亮度 (暫時模擬或提示，原生需 plugin)
+            _showNotice('☀️ 亮度調節 (開發中)');
+          } else {
+            // 右側：音量
+            double newVolume = _videoPlayerController.value.volume - (details.delta.dy / 100);
+            newVolume = newVolume.clamp(0.0, 1.0);
+            _videoPlayerController.setVolume(newVolume);
+            _showNotice('🔊 音量: ${(newVolume * 100).round()}%');
+          }
+        },
+        child: Stack(
+          children: [
+            // 1. 播放器主體
+            Center(
+              child: _chewieController != null && _videoPlayerController.value.isInitialized
+                  ? AspectRatio(
+                      aspectRatio: _videoPlayerController.value.aspectRatio,
+                      child: Chewie(controller: _chewieController!),
+                    )
+                  : const CircularProgressIndicator(),
+            ),
+
+            // 2. 頂部資訊欄 (左上角：片名 + 時間)
+            if (_showControls || _isLongPressing)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Text('正在播放', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Text(currentTime, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                    ],
+                  ),
+                ),
               ),
+
+            // 3. 底部控制列 (倍速切換)
+            if (_showControls)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 倍速按鈕列
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [0.5, 1.0, 1.25, 1.5, 2.0].map((speed) {
+                          final isSelected = _videoPlayerController.value.playbackSpeed == speed;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: ElevatedButton(
+                              onPressed: () {
+                                _videoPlayerController.setPlaybackSpeed(speed);
+                                _showNotice('速度: ${speed}x');
+                                setState(() {});
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isSelected ? Colors.blueAccent : Colors.grey[800],
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(60, 36),
+                                padding: EdgeInsets.zero,
+                              ),
+                              child: Text('${speed}x', style: const TextStyle(fontSize: 12)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      // 這裡可以加入進度條 (由 Chewie 提供或自定義)
+                    ],
+                  ),
+                ),
+              ),
+
+            // 4. 中央通知提示
+            if (_noticeText.isNotEmpty)
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Text(_noticeText, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                ),
+              ),
+            
+            // 返回按鈕
+            if (_showControls)
+              Positioned(
+                top: 40,
+                left: 10,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
