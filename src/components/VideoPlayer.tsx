@@ -922,9 +922,29 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
         }
 
         // 執行我們的手勢邏輯
-        e.stopPropagation(); // 阻止 ArtPlayer 處理該底層點擊 (例如切換播放/暫停)
-        // e.preventDefault(); // 視情況
+        // 使用 stopImmediatePropagation 完全阻止 ArtPlayer 處理該點擊
+        e.stopImmediatePropagation();
+        e.preventDefault();
         handlePointerDown(e);
+      };
+
+      const safeHandlePointerMove = (e: PointerEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.art-controls') || target.closest('.art-layer')) {
+          return;
+        }
+        e.stopImmediatePropagation();
+        handlePointerMove(e);
+      };
+
+      const safeHandlePointerUp = (e: PointerEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.art-controls') || target.closest('.art-layer')) {
+          return;
+        }
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        handlePointerUp(e);
       };
 
       $container.addEventListener(
@@ -934,10 +954,14 @@ const VideoPlayer = forwardRef<HTMLDivElement, VideoPlayerProps>(
       );
       $container.addEventListener(
         'pointermove',
-        handlePointerMove,
+        safeHandlePointerMove,
         eventOptions
       );
-      $container.addEventListener('pointerup', handlePointerUp, eventOptions);
+      $container.addEventListener(
+        'pointerup',
+        safeHandlePointerUp,
+        eventOptions
+      );
       // 禁止右鍵選單
       $container.addEventListener('contextmenu', (e) => e.preventDefault());
 
