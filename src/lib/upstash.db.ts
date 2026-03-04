@@ -91,14 +91,16 @@ export class UpstashRedisStorage implements IStorage {
     if (keys.length === 0) return {};
 
     const result: Record<string, PlayRecord> = {};
-    for (const fullKey of keys) {
-      const value = await withRetry(() => this.client.get(fullKey));
+    // 批量獲取
+    const values = await withRetry(() => this.client.mget<PlayRecord[]>(keys));
+
+    keys.forEach((fullKey, idx) => {
+      const value = values[idx];
       if (value) {
-        // 截取 source+id 部分
         const keyPart = ensureString(fullKey.replace(`u:${userName}:pr:`, ''));
-        result[keyPart] = value as PlayRecord;
+        result[keyPart] = value;
       }
-    }
+    });
     return result;
   }
 
@@ -134,13 +136,16 @@ export class UpstashRedisStorage implements IStorage {
     if (keys.length === 0) return {};
 
     const result: Record<string, Favorite> = {};
-    for (const fullKey of keys) {
-      const value = await withRetry(() => this.client.get(fullKey));
+    // 批量獲取
+    const values = await withRetry(() => this.client.mget<Favorite[]>(keys));
+
+    keys.forEach((fullKey, idx) => {
+      const value = values[idx];
       if (value) {
         const keyPart = ensureString(fullKey.replace(`u:${userName}:fav:`, ''));
-        result[keyPart] = value as Favorite;
+        result[keyPart] = value;
       }
-    }
+    });
     return result;
   }
 
