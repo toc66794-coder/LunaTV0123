@@ -2,6 +2,7 @@
 'use client';
 
 import { ChevronUp, Search, X } from 'lucide-react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, {
   startTransition,
@@ -58,6 +59,24 @@ function SearchPageClient() {
       { douban_id?: number; episodes?: number; source_names: string[] }
     >
   >(new Map());
+  // Actor search state
+  const [actorInfo, setActorInfo] = useState<{
+    id: number;
+    name: string;
+    profile_url: string | null;
+    known_for_department: string;
+  } | null>(null);
+  const [actorWorks, setActorWorks] = useState<
+    Array<{
+      id: number;
+      title: string;
+      year?: string;
+      rating?: string;
+      poster_url: string | null;
+      media_type: 'movie' | 'tv';
+      character: string;
+    }>
+  >([]);
 
   const getGroupRef = (key: string) => {
     let ref = groupRefs.current.get(key);
@@ -472,6 +491,13 @@ function SearchPageClient() {
 
       const trimmed = query.trim();
 
+      // Check for explicit actor search
+      const actorRegex = /^(演員|actor)[:\uff1a]/i;
+      const isExplicitActor = actorRegex.test(trimmed);
+      const cleanQuery = isExplicitActor
+        ? trimmed.replace(actorRegex, '').trim()
+        : trimmed;
+
       // 每次搜索时重新读取设置，确保使用最新的配置
       let currentFluidSearch = useFluidSearch;
       if (typeof window !== 'undefined') {
@@ -490,8 +516,26 @@ function SearchPageClient() {
         setUseFluidSearch(currentFluidSearch);
       }
 
+      // 流式搜索：并行发起演員搜索（流式接口只負責影片）
+      fetch(`/api/tmdb/actor?q=${encodeURIComponent(cleanQuery)}`)
+        .then((res) => res.json())
+        .then((actorData) => {
+          if (currentQueryRef.current !== trimmed) return;
+          if (actorData?.found) {
+            setActorInfo(actorData.actor);
+            setActorWorks(actorData.works);
+          } else {
+            setActorInfo(null);
+            setActorWorks([]);
+          }
+        })
+        .catch(() => {
+          setActorInfo(null);
+          setActorWorks([]);
+        });
+
       if (currentFluidSearch) {
-        // 流式搜索：打开新的流式连接
+        // 流式搜索：打開新的流式連接
         const es = new EventSource(
           `/api/search/ws?q=${encodeURIComponent(trimmed)}`
         );
@@ -587,28 +631,58 @@ function SearchPageClient() {
           }
         };
       } else {
-        // 传统搜索：使用普通接口
-        fetch(`/api/search?q=${encodeURIComponent(trimmed)}`)
-          .then((response) => response.json())
-          .then((data) => {
+        // 傳統搜索：并行搜索影片 + 演員
+        Promise.all([
+          // 1. 影片搜索（顯式演員模式時跳過）
+          isExplicitActor
+            ? Promise.resolve(null)
+            : fetch(`/api/search?q=${encodeURIComponent(cleanQuery)}`)
+                .then((response) => response.json())
+                .catch(() => null),
+          // 2. 演員搜索（總是執行）
+          fetch(`/api/tmdb/actor?q=${encodeURIComponent(cleanQuery)}`)
+            .then((response) => response.json())
+            .catch(() => null),
+        ])
+          .then(([movieData, actorData]) => {
             if (currentQueryRef.current !== trimmed) return;
 
-            if (data.results && Array.isArray(data.results)) {
+            // 處理演員結果
+            if (actorData?.found) {
+              setActorInfo(actorData.actor);
+              setActorWorks(actorData.works);
+            } else {
+              setActorInfo(null);
+              setActorWorks([]);
+            }
+
+            // 處理影片結果（非顯式演員模式時）
+            if (
+              !isExplicitActor &&
+              movieData?.results &&
+              Array.isArray(movieData.results)
+            ) {
               const activeYearOrder =
                 viewMode === 'agg' ? filterAgg.yearOrder : filterAll.yearOrder;
               const results: SearchResult[] =
                 activeYearOrder === 'none'
-                  ? sortBatchForNoOrder(data.results as SearchResult[])
-                  : (data.results as SearchResult[]);
+                  ? sortBatchForNoOrder(movieData.results as SearchResult[])
+                  : (movieData.results as SearchResult[]);
 
               setSearchResults(results);
               setTotalSources(1);
               setCompletedSources(1);
+            } else {
+              setSearchResults([]);
             }
+
             setIsLoading(false);
           })
           .catch(() => {
             setIsLoading(false);
+            setActorInfo(null);
+            setActorWorks([]);
+            setSearchResults([]);
           });
       }
       setShowSuggestions(false);
@@ -778,6 +852,64 @@ function SearchPageClient() {
                   )}
                 </h2>
               </div>
+
+              {/* Actor Info Card */}
+              {actorInfo && (
+                <div className='mb-8 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-700 rounded-lg flex items-center gap-4 shadow-sm'>
+                  {actorInfo.profile_url && (
+                    <div className='relative w-20 h-20 flex-shrink-0'>
+                      <Image
+                        src={actorInfo.profile_url}
+                        alt={actorInfo.name}
+                        fill
+                        sizes='80px'
+                        className='rounded-full object-cover ring-2 ring-blue-400'
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <h3 className='text-lg font-bold text-gray-900 dark:text-gray-100'>
+                      🎭 {actorInfo.name}
+                    </h3>
+                    <p className='text-sm text-gray-600 dark:text-gray-400'>
+                      {actorInfo.known_for_department} · 共 {actorWorks.length}{' '}
+                      部作品
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Actor Works */}
+              {actorWorks.length > 0 && (
+                <>
+                  <h3 className='text-md font-semibold text-gray-700 dark:text-gray-300 mb-4'>
+                    📺 參演作品
+                  </h3>
+                  <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 mb-8'>
+                    {actorWorks.map((work) => (
+                      <div key={`actor-work-${work.id}`} className='w-full'>
+                        <VideoCard
+                          from='douban'
+                          title={work.title}
+                          poster={work.poster_url || ''}
+                          year={work.year || 'unknown'}
+                          episodes={work.media_type === 'movie' ? 1 : 2}
+                          type={work.media_type}
+                          rate={work.rating}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Related Movies Section Header (if both actor and movie results exist) */}
+              {searchResults.length > 0 && actorWorks.length > 0 && (
+                <h3 className='text-md font-semibold text-gray-700 dark:text-gray-300 mb-4 mt-8'>
+                  🎬 相關影片搜尋結果
+                </h3>
+              )}
+
               {/* 筛选器 + 聚合开关 同行 */}
               <div className='mb-8 flex items-center justify-between gap-3'>
                 <div className='flex-1 min-w-0'>
@@ -820,8 +952,35 @@ function SearchPageClient() {
                     <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
                   </div>
                 ) : (
-                  <div className='text-center text-gray-500 py-8 dark:text-gray-400'>
-                    未找到相关结果
+                  <div className='text-center py-16 px-4 bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700'>
+                    <div className='inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 mb-4'>
+                      <Search className='h-6 w-6 text-gray-400' />
+                    </div>
+                    <p className='text-gray-500 dark:text-gray-400 mb-6'>
+                      未找到相關影片資源
+                    </p>
+                    <div className='flex flex-col sm:flex-row gap-3 justify-center'>
+                      <button
+                        onClick={() => {
+                          const q = searchQuery.trim();
+                          router.push(
+                            `/search?q=演員:${encodeURIComponent(q)}`
+                          );
+                        }}
+                        className='px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full text-sm font-medium transition-colors shadow-sm'
+                      >
+                        搜尋演員「{searchQuery.trim()}」
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSearchQuery('');
+                          document.getElementById('searchInput')?.focus();
+                        }}
+                        className='px-6 py-2 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-full text-sm font-medium border border-gray-200 dark:border-gray-600 transition-colors'
+                      >
+                        重新搜尋
+                      </button>
+                    </div>
                   </div>
                 )
               ) : (
