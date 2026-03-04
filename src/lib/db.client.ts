@@ -103,6 +103,7 @@ const SYNC_THROTTLE_INTERVAL = 60 * 1000; // 60 秒節流
 // ---- 缓存管理器 ----
 class HybridCacheManager {
   private static instance: HybridCacheManager;
+  private memoryCache: Record<string, UserCacheStore> = {};
 
   static getInstance(): HybridCacheManager {
     if (!HybridCacheManager.instance) {
@@ -132,10 +133,18 @@ class HybridCacheManager {
   private getUserCache(username: string): UserCacheStore {
     if (typeof window === 'undefined') return {};
 
+    // 優先從內存獲取
+    if (this.memoryCache[username]) {
+      return this.memoryCache[username];
+    }
+
     try {
       const cacheKey = this.getUserCacheKey(username);
       const cached = localStorage.getItem(cacheKey);
-      return cached ? JSON.parse(cached) : {};
+      const parsed = cached ? JSON.parse(cached) : {};
+      // 存入內存
+      this.memoryCache[username] = parsed;
+      return parsed;
     } catch (error) {
       console.warn('获取用户缓存失败:', error);
       return {};
@@ -148,16 +157,23 @@ class HybridCacheManager {
   private saveUserCache(username: string, cache: UserCacheStore): void {
     if (typeof window === 'undefined') return;
 
+    // 同步到內存
+    this.memoryCache[username] = cache;
+
     try {
+      const cacheStr = JSON.stringify(cache);
       // 检查缓存大小，超过15MB时清理旧数据
-      const cacheSize = JSON.stringify(cache).length;
-      if (cacheSize > 15 * 1024 * 1024) {
+      if (cacheStr.length > 15 * 1024 * 1024) {
         console.warn('缓存过大，清理旧数据');
         this.cleanOldCache(cache);
+        this.memoryCache[username] = cache; // 清理後更新內存
+        localStorage.setItem(
+          this.getUserCacheKey(username),
+          JSON.stringify(cache)
+        );
+      } else {
+        localStorage.setItem(this.getUserCacheKey(username), cacheStr);
       }
-
-      const cacheKey = this.getUserCacheKey(username);
-      localStorage.setItem(cacheKey, JSON.stringify(cache));
     } catch (error) {
       console.warn('保存用户缓存失败:', error);
       // 存储空间不足时清理缓存后重试
@@ -166,11 +182,15 @@ class HybridCacheManager {
         error.name === 'QuotaExceededError'
       ) {
         this.clearAllCache();
+        this.memoryCache = {}; // 同步清理內存
         try {
-          const cacheKey = this.getUserCacheKey(username);
-          localStorage.setItem(cacheKey, JSON.stringify(cache));
+          localStorage.setItem(
+            this.getUserCacheKey(username),
+            JSON.stringify(cache)
+          );
+          this.memoryCache[username] = cache;
         } catch (retryError) {
-          console.error('重试保存缓存仍然失败:', retryError);
+          console.error('重試保存缓存仍然失敗:', retryError);
         }
       }
     }
@@ -333,7 +353,7 @@ class HybridCacheManager {
   }
 
   /**
-   * 缓存跳过片头片尾配置
+   * 缓存跳過片頭片尾配置
    */
   cacheSkipConfigs(data: Record<string, SkipConfig>): void {
     const username = this.getCurrentUsername();
@@ -519,32 +539,37 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
 
   // 数据库存储模式：使用混合缓存策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
-    // 优先从缓存获取数据
+    // 優先從內存/本地快取獲取
     const cachedData = cacheManager.getCachedPlayRecords();
 
     if (cachedData) {
-      // 返回缓存数据，同时后台异步更新
-      fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
-        .then((freshData) => {
-          // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-            cacheManager.cachePlayRecords(freshData);
-            // 触发数据更新事件，供组件监听
-            window.dispatchEvent(
-              new CustomEvent('playRecordsUpdated', {
-                detail: freshData,
-              })
-            );
-          }
-        })
-        .catch((err) => {
-          console.warn('后台同步播放记录失败:', err);
-          triggerGlobalError('后台同步播放记录失败');
-        });
+      // 立即返回快取，實現「秒開」
+      // 只有在超過節流時間時才啟動背景同步
+      const now = Date.now();
+      const lastSync = apiSyncThrottles['playRecords'] || 0;
+
+      if (now - lastSync > SYNC_THROTTLE_INTERVAL) {
+        apiSyncThrottles['playRecords'] = now;
+        fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
+          .then((freshData) => {
+            // 比對數據，若不同則更新並通知 UI
+            if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
+              cacheManager.cachePlayRecords(freshData);
+              window.dispatchEvent(
+                new CustomEvent('playRecordsUpdated', {
+                  detail: freshData,
+                })
+              );
+            }
+          })
+          .catch((err) => {
+            console.warn('后台同步播放记录失败:', err);
+          });
+      }
 
       return cachedData;
     } else {
-      // 缓存为空，直接从 API 获取并缓存
+      // 緩存為空（第一次使用），顯示加載中並等待 API
       try {
         const freshData = await fetchFromApi<Record<string, PlayRecord>>(
           `/api/playrecords`
@@ -626,7 +651,7 @@ export async function savePlayRecord(
 
   // localstorage 模式
   if (typeof window === 'undefined') {
-    console.warn('无法在服务端保存播放记录到 localStorage');
+    console.warn('無法在服務端保存播放紀錄到 localStorage');
     return;
   }
 
@@ -685,7 +710,7 @@ export async function deletePlayRecord(
 
   // localstorage 模式
   if (typeof window === 'undefined') {
-    console.warn('无法在服务端删除播放记录到 localStorage');
+    console.warn('無法在服務端刪除播放紀錄到 localStorage');
     return;
   }
 
@@ -940,32 +965,35 @@ export async function getAllFavorites(): Promise<Record<string, Favorite>> {
 
   // 数据库存储模式：使用混合缓存策略（包括 redis 和 upstash）
   if (STORAGE_TYPE !== 'localstorage') {
-    // 优先从缓存获取数据
+    // 優先從內存/本地快取獲取
     const cachedData = cacheManager.getCachedFavorites();
 
     if (cachedData) {
-      // 返回缓存数据，同时后台异步更新
-      fetchFromApi<Record<string, Favorite>>(`/api/favorites`)
-        .then((freshData) => {
-          // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-            cacheManager.cacheFavorites(freshData);
-            // 触发数据更新事件
-            window.dispatchEvent(
-              new CustomEvent('favoritesUpdated', {
-                detail: freshData,
-              })
-            );
-          }
-        })
-        .catch((err) => {
-          console.warn('后台同步收藏失败:', err);
-          triggerGlobalError('后台同步收藏失败');
-        });
+      // 立即返回快取，實現「秒開」
+      const now = Date.now();
+      const lastSync = apiSyncThrottles['favorites'] || 0;
+
+      if (now - lastSync > SYNC_THROTTLE_INTERVAL) {
+        apiSyncThrottles['favorites'] = now;
+        fetchFromApi<Record<string, Favorite>>(`/api/favorites`)
+          .then((freshData) => {
+            if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
+              cacheManager.cacheFavorites(freshData);
+              window.dispatchEvent(
+                new CustomEvent('favoritesUpdated', {
+                  detail: freshData,
+                })
+              );
+            }
+          })
+          .catch((err) => {
+            console.warn('后台同步收藏失败:', err);
+          });
+      }
 
       return cachedData;
     } else {
-      // 缓存为空，直接从 API 获取并缓存
+      // 緩存為空，直接從 API 獲取並緩存
       try {
         const freshData = await fetchFromApi<Record<string, Favorite>>(
           `/api/favorites`
@@ -1036,7 +1064,7 @@ export async function saveFavorite(
 
   // localStorage 模式
   if (typeof window === 'undefined') {
-    console.warn('无法在服务端保存收藏到 localStorage');
+    console.warn('無法在服務端保存收藏到 localStorage');
     return;
   }
 
@@ -1095,7 +1123,7 @@ export async function deleteFavorite(
 
   // localStorage 模式
   if (typeof window === 'undefined') {
-    console.warn('无法在服务端删除收藏到 localStorage');
+    console.warn('無法在服務端刪除收藏到 localStorage');
     return;
   }
 
@@ -1455,7 +1483,7 @@ export async function getSkipConfig(
           }
         })
         .catch((err) => {
-          console.warn('后台同步跳过片头片尾配置失败:', err);
+          console.warn('后台同步跳過片頭片尾配置失败:', err);
         });
 
       return cachedData[key] || null;
@@ -1469,7 +1497,7 @@ export async function getSkipConfig(
         return freshData[key] || null;
       } catch (err) {
         console.error('获取跳过片头片尾配置失败:', err);
-        triggerGlobalError('获取跳过片头片尾配置失败');
+        triggerGlobalError('获取跳過片頭片尾配置失败');
         return null;
       }
     }
@@ -1482,14 +1510,14 @@ export async function getSkipConfig(
     const configs = JSON.parse(raw) as Record<string, SkipConfig>;
     return configs[key] || null;
   } catch (err) {
-    console.error('读取跳过片头片尾配置失败:', err);
-    triggerGlobalError('读取跳过片头片尾配置失败');
+    console.error('读取跳過片頭片尾配置失败:', err);
+    triggerGlobalError('读取跳過片頭片尾配置失败');
     return null;
   }
 }
 
 /**
- * 保存跳过片头片尾配置。
+ * 保存跳過片頭片尾配置。
  * 数据库存储模式下使用乐观更新：先更新缓存，再异步同步到数据库。
  */
 export async function saveSkipConfig(
@@ -1524,14 +1552,14 @@ export async function saveSkipConfig(
       });
     } catch (err) {
       console.error('保存跳过片头片尾配置失败:', err);
-      triggerGlobalError('保存跳过片头片尾配置失败');
+      triggerGlobalError('保存跳過片頭片尾配置失败');
     }
     return;
   }
 
   // localStorage 模式
   if (typeof window === 'undefined') {
-    console.warn('无法在服务端保存跳过片头片尾配置到 localStorage');
+    console.warn('無法在服務端保存跳過片頭片尾配置到 localStorage');
     return;
   }
 
@@ -1547,13 +1575,13 @@ export async function saveSkipConfig(
     );
   } catch (err) {
     console.error('保存跳过片头片尾配置失败:', err);
-    triggerGlobalError('保存跳过片头片尾配置失败');
+    triggerGlobalError('保存跳過片頭片尾配置失败');
     throw err;
   }
 }
 
 /**
- * 获取所有跳过片头片尾配置。
+ * 获取所有跳過片頭片尾配置。
  * 数据库存储模式下使用混合缓存策略：优先返回缓存数据，后台异步同步最新数据。
  */
 export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
@@ -1584,7 +1612,7 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
         })
         .catch((err) => {
           console.warn('后台同步跳过片头片尾配置失败:', err);
-          triggerGlobalError('后台同步跳过片头片尾配置失败');
+          triggerGlobalError('后台同步跳過片頭片尾配置失败');
         });
 
       return cachedData;
@@ -1598,7 +1626,7 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
         return freshData;
       } catch (err) {
         console.error('获取跳过片头片尾配置失败:', err);
-        triggerGlobalError('获取跳过片头片尾配置失败');
+        triggerGlobalError('获取跳過片頭片尾配置失败');
         return {};
       }
     }
@@ -1611,13 +1639,13 @@ export async function getAllSkipConfigs(): Promise<Record<string, SkipConfig>> {
     return JSON.parse(raw) as Record<string, SkipConfig>;
   } catch (err) {
     console.error('读取跳过片头片尾配置失败:', err);
-    triggerGlobalError('读取跳过片头片尾配置失败');
+    triggerGlobalError('读取跳過片頭片尾配置失败');
     return {};
   }
 }
 
 /**
- * 删除跳过片头片尾配置。
+ * 删除跳過片頭片尾配置。
  * 数据库存储模式下使用乐观更新：先更新缓存，再异步同步到数据库。
  */
 export async function deleteSkipConfig(
@@ -1646,15 +1674,15 @@ export async function deleteSkipConfig(
         method: 'DELETE',
       });
     } catch (err) {
-      console.error('删除跳过片头片尾配置失败:', err);
-      triggerGlobalError('删除跳过片头片尾配置失败');
+      console.error('删除跳過片頭片尾配置失败:', err);
+      triggerGlobalError('删除跳過片頭片尾配置失败');
     }
     return;
   }
 
   // localStorage 模式
   if (typeof window === 'undefined') {
-    console.warn('无法在服务端删除跳过片头片尾配置到 localStorage');
+    console.warn('無法在服務端刪除跳過片頭片尾配置到 localStorage');
     return;
   }
 
@@ -1671,8 +1699,8 @@ export async function deleteSkipConfig(
       );
     }
   } catch (err) {
-    console.error('删除跳过片头片尾配置失败:', err);
-    triggerGlobalError('删除跳过片头片尾配置失败');
+    console.error('删除跳過片頭片尾配置失败:', err);
+    triggerGlobalError('删除跳過片頭片尾配置失败');
     throw err;
   }
 }
