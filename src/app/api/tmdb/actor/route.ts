@@ -23,24 +23,38 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log(`[TMDb] Actor Search Query: "${query}"`);
+
     // 多語言並行搜尋（處理翻譯差異）
-    const [resultsTW, resultsCN, resultsEN] = await Promise.all([
-      searchPerson(query, 1, 'zh-TW').catch(() => ({ results: [] })),
-      searchPerson(query, 1, 'zh-CN').catch(() => ({ results: [] })),
-      searchPerson(query, 1, 'en').catch(() => ({ results: [] })),
+    const results = await Promise.all([
+      searchPerson(query, 1, 'zh-TW')
+        .then((r) => r.results)
+        .catch((err) => {
+          console.error(`[TMDb] zh-TW search failed:`, err.message);
+          return [];
+        }),
+      searchPerson(query, 1, 'zh-CN')
+        .then((r) => r.results)
+        .catch((err) => {
+          console.error(`[TMDb] zh-CN search failed:`, err.message);
+          return [];
+        }),
+      searchPerson(query, 1, 'en')
+        .then((r) => r.results)
+        .catch((err) => {
+          console.error(`[TMDb] en search failed:`, err.message);
+          return [];
+        }),
     ]);
 
     // 合併結果並去重（根據 TMDb ID）
-    const allResults = [
-      ...resultsTW.results,
-      ...resultsCN.results,
-      ...resultsEN.results,
-    ];
+    const allResults = results.flat();
     const uniqueResults = Array.from(
       new Map(allResults.map((item) => [item.id, item])).values()
     );
 
     if (uniqueResults.length === 0) {
+      console.log(`[TMDb] No results found for "${query}"`);
       return NextResponse.json({
         found: false,
         message: '找不到該演員',
