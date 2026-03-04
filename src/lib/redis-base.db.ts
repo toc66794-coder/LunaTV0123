@@ -194,18 +194,29 @@ export abstract class BaseRedisStorage implements IStorage {
     userName: string
   ): Promise<Record<string, PlayRecord>> {
     const pattern = `u:${userName}:pr:*`;
-    const keys: string[] = await this.withRetry(() =>
-      this.client.keys(pattern)
-    );
+    const keys: string[] = [];
+
+    // 使用 SCAN 代替 KEYS
+    let cursor = 0;
+    do {
+      const reply = await this.withRetry(() =>
+        this.client.scan(cursor, { MATCH: pattern, COUNT: 100 })
+      );
+      cursor = reply.cursor;
+      keys.push(...reply.keys);
+    } while (cursor !== 0);
+
     if (keys.length === 0) return {};
+
     const values = await this.withRetry(() => this.client.mGet(keys));
     const result: Record<string, PlayRecord> = {};
+    const prefix = `u:${userName}:pr:`;
+
     keys.forEach((fullKey: string, idx: number) => {
       const raw = values[idx];
       if (raw) {
         const rec = JSON.parse(raw) as PlayRecord;
-        // 截取 source+id 部分
-        const keyPart = ensureString(fullKey.replace(`u:${userName}:pr:`, ''));
+        const keyPart = ensureString(fullKey.replace(prefix, ''));
         result[keyPart] = rec;
       }
     });
@@ -240,17 +251,29 @@ export abstract class BaseRedisStorage implements IStorage {
 
   async getAllFavorites(userName: string): Promise<Record<string, Favorite>> {
     const pattern = `u:${userName}:fav:*`;
-    const keys: string[] = await this.withRetry(() =>
-      this.client.keys(pattern)
-    );
+    const keys: string[] = [];
+
+    // 使用 SCAN 代替 KEYS
+    let cursor = 0;
+    do {
+      const reply = await this.withRetry(() =>
+        this.client.scan(cursor, { MATCH: pattern, COUNT: 100 })
+      );
+      cursor = reply.cursor;
+      keys.push(...reply.keys);
+    } while (cursor !== 0);
+
     if (keys.length === 0) return {};
+
     const values = await this.withRetry(() => this.client.mGet(keys));
     const result: Record<string, Favorite> = {};
+    const prefix = `u:${userName}:fav:`;
+
     keys.forEach((fullKey: string, idx: number) => {
       const raw = values[idx];
       if (raw) {
         const fav = JSON.parse(raw) as Favorite;
-        const keyPart = ensureString(fullKey.replace(`u:${userName}:fav:`, ''));
+        const keyPart = ensureString(fullKey.replace(prefix, ''));
         result[keyPart] = fav;
       }
     });
