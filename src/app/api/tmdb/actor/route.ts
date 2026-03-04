@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
         media_type: 'title' in work ? 'movie' : 'tv',
       }))
       .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
-      .slice(0, 20); // 只返回前 20 部作品
+      .slice(0, 40); // 只返回前 20 部作品
 
     return NextResponse.json({
       found: true,
